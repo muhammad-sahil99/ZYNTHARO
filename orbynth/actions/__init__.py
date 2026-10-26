@@ -1,0 +1,123 @@
+"""Action layer: every capability that touches the computer, plus the gate they pass through.
+
+``build_registry`` is the single place that assembles the tool surface. Drivers that need a
+display or a native dependency are still registered — they fail with a precise, actionable
+message when called on a machine that cannot support them, which is far better than a
+missing tool the model cannot reason about.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Sequence
+
+from ..config import AppConfig
+from ..events import EventBus
+from ..llm.providers import ToolSpec
+from . import (
+    browser,
+    filesystem,
+    input_control,
+    office,
+    orchestration,
+    registry as registry_module,
+    shell,
+    vision,
+    whatsapp,
+    windows,
+)
+from .registry import (
+    Action,
+    ActionContext,
+    ActionFailed,
+    ActionResult,
+    ActionRegistry,
+    CapabilityError,
+    ConfirmationRequired,
+    DriverUnavailable,
+    action,
+)
+
+DRIVER_MODULES = (
+    registry_module,
+    filesystem,
+    shell,
+    input_control,
+    vision,
+    windows,
+    office,
+    browser,
+    whatsapp,
+    orchestration,
+)
+
+
+def build_registry(
+    config: AppConfig | None = None,
+    bus: EventBus | None = None,
+    memory: Any = None,
+    services: orchestration.Services | None = None,
+) -> ActionRegistry:
+    """Assemble every action into one registry and wire orchestration services."""
+    registry = ActionRegistry(bus=bus, memory=memory, config=config)
+    for module in DRIVER_MODULES:
+        factory = getattr(module, "all_actions", None)
+        if callable(factory):
+            registry.register_all(factory())
+        else:  # pragma: no cover - defensive
+            registry.register_module(module)
+    if services is not None:
+        orchestration.set_services(services)
+    return registry
+
+
+def driver_report() -> list[dict[str, Any]]:
+    """Which drivers can actually execute on this machine (used by ``orbynth doctor``)."""
+    import os
+    import platform
+
+    checks: list[tuple[str, str, str]] = [
+        ("input", "pyautogui", "pip install pyautogui"),
+        ("vision", "mss", "pip install mss"),
+        ("vision", "PIL", "pip install Pillow"),
+        ("vision", "rapidocr_onnxruntime", "pip install rapidocr-onnxruntime"),
+        ("browser", "playwright", "pip install playwright && playwright install chromium"),
+        ("browser", "websocket", "pip install websocket-client"),
+        ("voice", "sounddevice", "pip install sounddevice"),
+        ("voice", "faster_whisper", "pip install faster-whisper"),
+        ("hud", "webview", "pip install pywebview"),
+    ]
+    if os.name == "nt":
+        checks += [("office", "win32com.client", "pip install pywin32"), ("windows", "uiautomation", "pip install uiautomation")]
+    rows: list[dict[str, Any]] = []
+    for driver, module, hint in checks:
+        try:
+            __import__(module)
+            rows.append({"driver": driver, "module": module, "available": True, "hint": ""})
+        except Exception:
+            rows.append({"driver": driver, "module": module, "available": False, "hint": hint})
+    rows.append({"driver": "platform", "module": f"{platform.system()} {platform.release()}", "available": True, "hint": ""})
+    return rows
+
+
+__all__ = [
+    "Action",
+    "ActionContext",
+    "ActionFailed",
+    "ActionResult",
+    "ActionRegistry",
+    "CapabilityError",
+    "ConfirmationRequired",
+    "DriverUnavailable",
+    "action",
+    "build_registry",
+    "driver_report",
+    "orchestration",
+    "filesystem",
+    "shell",
+    "input_control",
+    "vision",
+    "windows",
+    "office",
+    "browser",
+    "whatsapp",
+]

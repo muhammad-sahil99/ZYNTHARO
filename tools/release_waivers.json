@@ -1,0 +1,11 @@
+{
+  "_comment": "Recorded waivers for blocking acceptance checks (contract 22.3). A waiver is a written sign-off and must name who signed it off, when, and why. Entries with a missing signed_off_by or date are ignored by tools/release_gate.py: an unsigned waiver is not a waiver. Waiving a blocking check makes the gate green without evidence, so keep this file short and reviewed.",
+  "_format": {
+    "check_id": "the id from tools/acceptance.json",
+    "signed_off_by": "the owner's name - not a role, not 'team'",
+    "date": "YYYY-MM-DD",
+    "reason": "what is not verified and why that is acceptable for this release",
+    "expires": "YYYY-MM-DD (optional): the waiver stops applying after this date"
+  },
+  "waivers": []
+}

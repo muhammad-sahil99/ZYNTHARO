@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ORBYNTH — desktop operative</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app" class="boot">
+  <!-- ============ CORE CANVASES ============ -->
+  <canvas id="core" class="layer core"></canvas>
+  <canvas id="wires" class="layer wires"></canvas>
+  <div class="vignette"></div>
+  <div class="scanline"></div>
+
+  <!-- ============ TOP BAR ============ -->
+  <header class="topbar glass">
+    <div class="brand">
+      <span class="glyph">◉</span>
+      <div class="brand-text">
+        <h1>ORBYNTH</h1>
+        <small id="tagline">desktop operative · vision · input · browser · files · office · self-extending</small>
+      </div>
+    </div>
+
+    <div class="vitals">
+      <div class="vital" title="Live link to the core">
+        <span class="label">LINK</span>
+        <span id="link-state" class="value">connecting…</span>
+      </div>
+      <div class="vital" title="Sovereign model">
+        <span class="label">MODEL</span>
+        <span id="model-state" class="value">—</span>
+      </div>
+      <div class="vital" title="Agents online">
+        <span class="label">AGENTS</span>
+        <span id="agent-count" class="value">0</span>
+      </div>
+      <div class="vital" title="Capabilities registered">
+        <span class="label">ACTIONS</span>
+        <span id="action-count" class="value">0</span>
+      </div>
+      <div class="vital" title="Quota pressure across the fleet">
+        <span class="label">QUOTA</span>
+        <span id="quota-state" class="value">ok</span>
+      </div>
+      <div class="vital" title="Memory: episodes / facts / tasks">
+        <span class="label">MEMORY</span>
+        <span id="memory-state" class="value">0 / 0 / 0</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <button id="voice-toggle" class="pill live" title="Toggle the microphone (voice is the default interface)">
+        <span class="dot"></span><span id="voice-label">VOICE LIVE</span>
+      </button>
+      <button id="ptt" class="pill" title="Hold to talk (push to talk)">HOLD&nbsp;TO&nbsp;TALK</button>
+      <div class="menu-wrap">
+        <button id="menu-btn" class="pill" title="Menu">☰ MENU</button>
+        <div id="menu" class="menu glass hidden">
+          <div class="menu-title">Interface</div>
+          <label class="menu-item"><input type="checkbox" id="m-chat" /> Chat input (voice is default)</label>
+          <label class="menu-item"><input type="checkbox" id="m-chat-panel" checked /> Transcript panel</label>
+          <label class="menu-item"><input type="checkbox" id="m-agents" checked /> Agent graph</label>
+          <label class="menu-item"><input type="checkbox" id="m-panels" checked /> Side panels</label>
+          <label class="menu-item"><input type="checkbox" id="m-wires" checked /> Live wiring</label>
+          <label class="menu-item"><input type="checkbox" id="m-webgl" checked /> Particle core</label>
+          <label class="menu-item"><input type="checkbox" id="m-speak" checked /> Speak replies aloud</label>
+          <label class="menu-item"><input type="checkbox" id="m-mic" /> Browser microphone (speech input)</label>
+          <div class="menu-title">Core state</div>
+          <div class="menu-row">
+            <button class="pill tiny" data-shape="sphere">sphere</button>
+            <button class="pill tiny" data-shape="torus">torus</button>
+            <button class="pill tiny" data-shape="helix">helix</button>
+            <button class="pill tiny" data-shape="grid">grid</button>
+            <button class="pill tiny" data-shape="wave">wave</button>
+          </div>
+          <div class="menu-title">Session</div>
+          <label class="menu-item"><input type="checkbox" id="m-mock" /> Demo data (no backend)</label>
+          <div class="menu-note" id="menu-note">bridge: —</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ LEFT: AGENTS ============ -->
+  <aside id="agents-panel" class="panel left glass">
+    <h2>Fleet <span id="team-count" class="chip">0 teams</span></h2>
+    <div id="agents" class="agents"></div>
+    <div class="panel-foot">
+      <button id="spawn-agent" class="pill tiny">+ spawn operative</button>
+      <button id="refresh-state" class="pill tiny">refresh</button>
+    </div>
+  </aside>
+
+  <!-- ============ RIGHT: PANELS ============ -->
+  <aside id="side-panels" class="panel right glass">
+    <nav class="tabs">
+      <button data-tab="transcript" class="tab active">Transcript</button>
+      <button data-tab="quota" class="tab">Quotas</button>
+      <button data-tab="plugins" class="tab">Plugins</button>
+      <button data-tab="actions" class="tab">Actions</button>
+      <button data-tab="drivers" class="tab">Drivers</button>
+      <button data-tab="memory" class="tab">Memory</button>
+    </nav>
+
+    <section data-panel="transcript" class="tab-panel active">
+      <div id="transcript" class="transcript"></div>
+    </section>
+
+    <section data-panel="quota" class="tab-panel">
+      <p class="hint">Per-model envelopes the Steward manages — rpm / rpd / tpm / tpd. Amber means nearly spent, red means exhausted or cooling down.</p>
+      <div id="quota-table" class="table"></div>
+    </section>
+
+    <section data-panel="plugins" class="tab-panel">
+      <p class="hint">Capability the system wrote for itself. Forged plugins register as first-class actions — no vision, no clicking, no typing.</p>
+      <div id="plugins" class="plugins"></div>
+      <div class="panel-foot">
+        <input id="forge-need" placeholder="describe a repeated task…" />
+        <button id="forge-btn" class="pill tiny">forge plugin</button>
+      </div>
+    </section>
+
+    <section data-panel="actions" class="tab-panel">
+      <p class="hint">Live action log — every capability-gated call with its outcome.</p>
+      <div id="action-log" class="log"></div>
+    </section>
+
+    <section data-panel="drivers" class="tab-panel">
+      <p class="hint">What can physically execute on this machine. Missing drivers are reported, never faked.</p>
+      <div id="drivers" class="table"></div>
+    </section>
+
+    <section data-panel="memory" class="tab-panel">
+      <div class="row">
+        <input id="memory-query" placeholder="search memory…" />
+        <button id="memory-btn" class="pill tiny">recall</button>
+      </div>
+      <div id="memory-results" class="log"></div>
+      <div id="audit-log" class="log"></div>
+    </section>
+  </aside>
+
+  <!-- ============ CONFIRMATIONS ============ -->
+  <div id="confirmations" class="confirmations"></div>
+
+  <!-- ============ NOTICES ============ -->
+  <div id="notices" class="notices"></div>
+
+  <!-- ============ SCENE VIEWER ============ -->
+  <div id="scene" class="scene glass hidden">
+    <header class="scene-head">
+      <span id="scene-title">Scene</span>
+      <div>
+        <button id="scene-pop" class="pill tiny" title="Toggle size">⤢</button>
+        <button id="scene-close" class="pill tiny">✕</button>
+      </div>
+    </header>
+    <div id="scene-body" class="scene-body"></div>
+  </div>
+
+  <!-- ============ CHAT (optional, off by default) ============ -->
+  <div id="chatbar" class="chatbar glass hidden">
+    <input id="chat-input" placeholder="Type instead of speaking…  (⌘/Ctrl + K)" autocomplete="off" />
+    <button id="chat-send" class="pill">send</button>
+    <span class="chat-note">voice-first · chat available from the menu</span>
+  </div>
+
+  <!-- ============ CORE STATE LABEL ============ -->
+  <div class="core-label">
+    <span id="core-state">idle</span>
+    <small id="core-sub">awaiting instruction</small>
+  </div>
+</div>
+
+<script src="particle-core.js"></script>
+<script src="wires.js"></script>
+<script src="mock.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

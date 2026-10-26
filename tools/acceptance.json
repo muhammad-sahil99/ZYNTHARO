@@ -1,0 +1,259 @@
+{
+  "version": "1.0",
+  "product": "ORBYNTH",
+  "note": "One manifest for the whole product. Every section's acceptance test lives here. blocking=false means it is informative: a failure does not stop a release. A blocking check with unmet prerequisites may only be waived in release_waivers.json with who/when/why recorded.",
+  "milestones": [
+    {"id": "M0", "name": "One real task through every layer", "exit": "a task reaches a driver, is verified, reported, remembered and shown on the HUD"},
+    {"id": "M1", "name": "Contracts frozen against a working slice", "exit": "the M0 slice passes on two clean machines"},
+    {"id": "M2", "name": "Action surface complete", "exit": "every declared action has a driver behind it or an honest DriverUnavailable"},
+    {"id": "M3", "name": "Fleet and self-extension", "exit": "teams, Steward failover and plugin authoring verified end to end"},
+    {"id": "M4", "name": "Interface and voice", "exit": "voice-first session with live HUD wiring on real hardware"},
+    {"id": "GA", "name": "General availability", "exit": "installer on three OSes, zero coding environment, no blocking test unwaived"}
+  ],
+  "checks": [
+    {
+      "id": "m0_slice",
+      "title": "One task through gate -> driver -> evidence -> memory -> bus",
+      "milestone": "M0",
+      "kind": "ops",
+      "op": "m0_slice",
+      "blocking": true
+    },
+    {
+      "id": "tests_core",
+      "title": "Core, LLM and action unit suites",
+      "milestone": "M0",
+      "kind": "command",
+      "command": "python3 -m unittest tests.test_core tests.test_llm tests.test_actions",
+      "blocking": true,
+      "timeout": 600
+    },
+    {
+      "id": "tests_ops",
+      "title": "Operations suites: supervisor, preflight, owner, verification, catalog, governor, languages",
+      "milestone": "M0",
+      "kind": "command",
+      "command": "python3 -m unittest tests.test_ops",
+      "blocking": true,
+      "timeout": 600
+    },
+    {
+      "id": "tests_all",
+      "title": "Whole suite on this machine",
+      "milestone": "M1",
+      "kind": "command",
+      "command": "python3 -m unittest discover -s tests",
+      "blocking": true,
+      "timeout": 1800
+    },
+    {
+      "id": "doctor_clean",
+      "title": "orbynth doctor reports honestly: every missing driver named, none faked",
+      "milestone": "M1",
+      "kind": "command",
+      "command": "ORBYNTH_HOME=$(mktemp -d) python3 -m orbynth doctor",
+      "blocking": true,
+      "timeout": 300
+    },
+    {
+      "id": "second_machine",
+      "title": "M0 slice passes on a second clean machine",
+      "milestone": "M1",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["second_machine"],
+      "procedure": "On a machine that has never run ORBYNTH, install, run `orbynth doctor`, then `orbynth run \"write a file and read it back\"`. Record the transcript.",
+      "prerequisite_note": "needs a second clean machine; set ORBYNTH_ACCEPT_SECOND_MACHINE=1 once it exists"
+    },
+    {
+      "id": "input_focus_guard",
+      "title": "Typing aborts when focus drifts, and never types into nothing",
+      "milestone": "M2",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["windows", "interactive_desktop"],
+      "procedure": "Open Notepad and a second window. Ask ORBYNTH to type a long string into Notepad, then steal focus mid-typing. Expect an abort with the wrong-window reason, no text in the other window, and a retry after re-focus. Then target a read-only field and confirm it reports failure instead of claiming success.",
+      "prerequisite_note": "needs a real Windows desktop with pynput/pyautogui/uiautomation installed"
+    },
+    {
+      "id": "browser_full_surface",
+      "title": "Browser: tabs, chrome icons, forms, extraction with and without vision",
+      "milestone": "M2",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["windows", "interactive_desktop"],
+      "procedure": "With the user's Chrome open: list tabs, switch, open and close a tab, click refresh/extensions/Lens/account/menu, fill a form, scroll, extract a table, and take the same reading with vision disabled. The two readings must carry the same information.",
+      "prerequisite_note": "needs a desktop browser and Playwright/CDP access"
+    },
+    {
+      "id": "office_roundtrip",
+      "title": "Office: Word, Excel, Access, PowerPoint round trips through COM",
+      "milestone": "M2",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["windows", "office_license"],
+      "procedure": "Create, edit, save-as, export to PDF and reopen a document in each app, including an Access database and a PowerPoint deck with a chart. Confirm no document is left unsaved or locked.",
+      "prerequisite_note": "needs a licensed Microsoft Office install; set ORBYNTH_ACCEPT_OFFICE_LICENSE=1"
+    },
+    {
+      "id": "whatsapp_pipeline",
+      "title": "WhatsApp: pair once, then send, receive, media, voice note and a real call",
+      "milestone": "M2",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["whatsapp_account"],
+      "procedure": "Pair with a test number, list chats, search, send text/image/voice note, receive each, then place and answer a voice call using a dedicated test device. Confirm the allow-list blocks a chat that was not permitted.",
+      "prerequisite_note": "needs a WhatsApp test number and the Node sidecar built; set ORBYNTH_ACCEPT_WHATSAPP_ACCOUNT=1"
+    },
+    {
+      "id": "plugin_lifecycle",
+      "title": "Plugin authored, validated, installed, callable, removable",
+      "milestone": "M3",
+      "kind": "ops",
+      "op": "plugin_lifecycle",
+      "blocking": true
+    },
+    {
+      "id": "supervisor_cleanup",
+      "title": "Supervised jobs die with the supervisor; orphan cleanup runs at startup",
+      "milestone": "M3",
+      "kind": "ops",
+      "op": "supervisor_cleanup",
+      "blocking": true
+    },
+    {
+      "id": "owner_gate",
+      "title": "Owner gate: PIN required for irreversible work, voice alone refused, recovery rotates",
+      "milestone": "M3",
+      "kind": "ops",
+      "op": "owner_gate",
+      "blocking": true
+    },
+    {
+      "id": "catalog_rollback",
+      "title": "Catalog applies only when idle, retires dead model IDs, rolls back",
+      "milestone": "M3",
+      "kind": "ops",
+      "op": "catalog_rollback",
+      "blocking": true
+    },
+    {
+      "id": "preflight_unattended",
+      "title": "Locked screen, battery, audio and busy machine produce honest decisions",
+      "milestone": "M3",
+      "kind": "ops",
+      "op": "preflight",
+      "blocking": true
+    },
+    {
+      "id": "risk_tiered_verification",
+      "title": "Risk tiers: batched harmless work, never-shortcut irreversible work",
+      "milestone": "M3",
+      "kind": "ops",
+      "op": "risk_tiers",
+      "blocking": true
+    },
+    {
+      "id": "language_rtl",
+      "title": "Urdu/Arabic: direction, detection, digit normalisation, OCR packs",
+      "milestone": "M3",
+      "kind": "ops",
+      "op": "language_rtl",
+      "blocking": true
+    },
+    {
+      "id": "billing_modes",
+      "title": "BYOK default; hosted gateway disarmed without legal review and abuse caps",
+      "milestone": "M3",
+      "kind": "ops",
+      "op": "billing_modes",
+      "blocking": true
+    },
+    {
+      "id": "governor_responsive",
+      "title": "Background work yields during games/calls; user-requested work does not",
+      "milestone": "M3",
+      "kind": "ops",
+      "op": "governor",
+      "blocking": true
+    },
+    {
+      "id": "voice_session_live",
+      "title": "Wake word, streaming STT, TTS and barge-in on real hardware",
+      "milestone": "M4",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["audio_hardware"],
+      "procedure": "Say the wake word, interrupt the assistant mid-sentence (barge-in), and confirm the transcript in the HUD matches the audio. Repeat with Urdu or Arabic speech and confirm the language switch.",
+      "prerequisite_note": "needs a microphone and speakers; set ORBYNTH_ACCEPT_AUDIO_HARDWARE=1"
+    },
+    {
+      "id": "hud_live_wiring",
+      "title": "HUD shows live state: particles, wires, agent graph, quota and plugin panels",
+      "milestone": "M4",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["interactive_desktop"],
+      "procedure": "Run a multi-agent task and confirm wires animate only on real events, the agent graph matches the roster, the quota panel shows real headroom, and a deny/confirm shows in the panel rather than being invisible.",
+      "prerequisite_note": "needs a desktop session to view the webview"
+    },
+    {
+      "id": "unattended_dedicated_machine",
+      "title": "Scheduled GUI task runs unattended on a dedicated machine or VM",
+      "milestone": "M4",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["dedicated_machine"],
+      "procedure": "Schedule a GUI task for a time when no user is logged in but the dedicated session is unlocked, and confirm it runs; then lock the session and confirm the run defers with an honest reason instead of failing silently.",
+      "prerequisite_note": "needs an always-on machine or VM with an auto-login or isolated session; set ORBYNTH_ACCEPT_DEDICATED_MACHINE=1"
+    },
+    {
+      "id": "installer_zero_prereq",
+      "title": "Installer on a machine with no Python, Node or compiler",
+      "milestone": "GA",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["second_machine", "code_signing_cert"],
+      "procedure": "Install from the signed package on a clean VM of each supported OS, launch, complete first-run owner setup, run one task with a bundled offline provider, then uninstall and confirm no orphaned files, services or scheduled jobs remain.",
+      "prerequisite_note": "needs the packaged installer plus a Windows/macOS code-signing certificate and clean VMs"
+    },
+    {
+      "id": "legal_provider_terms",
+      "title": "Provider terms reviewed for the chosen launch mode",
+      "milestone": "GA",
+      "kind": "owner",
+      "blocking": true,
+      "requires": ["legal_review"],
+      "procedure": "Record the review reference for every provider whose models ORBYNTH calls, and for the hosted gateway specifically whether resale is permitted. BYOK needs no resale review, but still needs a privacy review.",
+      "prerequisite_note": "only the owner can do this; set ORBYNTH_ACCEPT_LEGAL_REVIEW=1 once the reference is recorded"
+    },
+    {
+      "id": "test_accounts_ready",
+      "title": "Test accounts and licences provided (WhatsApp, Microsoft 365, Google)",
+      "milestone": "GA",
+      "kind": "owner",
+      "blocking": false,
+      "requires": ["test_tenant"],
+      "procedure": "Provide dedicated test tenants and numbers so the browser, Office and WhatsApp checks can run without touching production data.",
+      "prerequisite_note": "only the owner can supply these; set ORBYNTH_ACCEPT_TEST_TENANT=1 once created"
+    },
+    {
+      "id": "provider_drift_check",
+      "title": "Nightly provider check finds retired or renamed model IDs",
+      "milestone": "GA",
+      "kind": "command",
+      "command": "python3 -m orbynth catalog check",
+      "blocking": false,
+      "timeout": 300
+    },
+    {
+      "id": "tests_repeat_flake",
+      "title": "Suite repeated twice to catch flaky concurrency tests",
+      "milestone": "GA",
+      "kind": "command",
+      "command": "python3 -m unittest discover -s tests && python3 -m unittest discover -s tests",
+      "blocking": false,
+      "timeout": 1800
+    }
+  ]
+}

@@ -1,0 +1,304 @@
+{
+  "generated_at": 1793026707.9980927,
+  "generated_at_iso": "2026-10-26 14:58:27",
+  "machine": {
+    "platform": "Linux-6.1.102-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "milestone": "M3",
+  "capabilities": {
+    "posix": true,
+    "windows": false,
+    "macos": false,
+    "linux": true,
+    "interactive_desktop": false,
+    "python": true,
+    "node": true,
+    "network": true,
+    "office_license": false,
+    "whatsapp_account": false,
+    "test_tenant": false,
+    "google_test_account": false,
+    "code_signing_cert": false,
+    "legal_review": false,
+    "audio_hardware": false,
+    "physical_rig": false,
+    "dedicated_machine": false,
+    "second_machine": false
+  },
+  "verdict": "NOT_READY",
+  "counts": {
+    "pass": 14,
+    "fail": 0,
+    "blocked_prerequisite": 5,
+    "waived": 0,
+    "skipped": 0
+  },
+  "blocking_failures": [],
+  "blocked_prerequisites": [
+    {
+      "id": "second_machine",
+      "missing": [
+        "second_machine"
+      ]
+    },
+    {
+      "id": "input_focus_guard",
+      "missing": [
+        "windows",
+        "interactive_desktop"
+      ]
+    },
+    {
+      "id": "browser_full_surface",
+      "missing": [
+        "windows",
+        "interactive_desktop"
+      ]
+    },
+    {
+      "id": "office_roundtrip",
+      "missing": [
+        "windows",
+        "office_license"
+      ]
+    },
+    {
+      "id": "whatsapp_pipeline",
+      "missing": [
+        "whatsapp_account"
+      ]
+    }
+  ],
+  "manual_outstanding": [
+    "second_machine",
+    "input_focus_guard",
+    "browser_full_surface",
+    "office_roundtrip",
+    "whatsapp_pipeline"
+  ],
+  "results": [
+    {
+      "id": "m0_slice",
+      "title": "One task through gate -> driver -> evidence -> memory -> bus",
+      "milestone": "M0",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "task through gate->driver->evidence->memory->bus; 2 topics; delete correctly denied (capability denied: filesystem.delete)",
+      "duration": 0.09,
+      "missing": []
+    },
+    {
+      "id": "tests_core",
+      "title": "Core, LLM and action unit suites",
+      "milestone": "M0",
+      "blocking": true,
+      "kind": "command",
+      "status": "pass",
+      "detail": ".../workspace/chats/c217f37466d0efaf41f5e709/tests/test_core.py:28: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpwg1vo7w5/config.json' mode='r' encoding='UTF-8'>\n  reloaded = AppConfig.from_json(json.loads(open(path).read()))\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n...................................../workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:127: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-48pza2mw/new.rs' mode='r' encoding='UTF-8'>\n  self.assertIn(\"fn main\", open(target).read())\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:163: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-hk7h_jyh/tree/inner/f.txt' mode='w' encoding='UTF-8'>\n  open(os.path.join(folder, \"f.txt\"), \"w\").write(\"x\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:104: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-pbgu_o7z/cfg.ini' mode='r' encoding='UTF-8'>\n  self.assertIn(\"fast\", open(target).read())\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................/workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:43: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-5r5bjpu8/doomed.txt' mode='w' encoding='UTF-8'>\n  open(target, \"w\").write(\"bye\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n......./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:471: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/orbynth-work-ln50xb1j/pic.png'>\n  open(real, \"wb\").write(b\"\\x89PNG\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n.....\n----------------------------------------------------------------------\nRan 70 tests in 1.424s\n\n",
+      "duration": 1.58,
+      "missing": []
+    },
+    {
+      "id": "tests_ops",
+      "title": "Operations suites: supervisor, preflight, owner, verification, catalog, governor, languages",
+      "milestone": "M0",
+      "blocking": true,
+      "kind": "command",
+      "status": "pass",
+      "detail": "........................................./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 13959 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 13962 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..........\n----------------------------------------------------------------------\nRan 52 tests in 2.955s\n\nOK",
+      "duration": 3.09,
+      "missing": []
+    },
+    {
+      "id": "tests_all",
+      "title": "Whole suite on this machine",
+      "milestone": "M1",
+      "blocking": true,
+      "kind": "command",
+      "status": "pass",
+      "detail": "  open(target, \"w\").write(\"bye\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n......./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:471: ResourceWarning: unclosed file <_io.BufferedWriter name='/tmp/orbynth-work-4d_93k2l/pic.png'>\n  open(real, \"wb\").write(b\"\\x89PNG\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n...../workspace/chats/c217f37466d0efaf41f5e709/tests/test_agents_plugins.py:80: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-agent-pcdt6j9d/revoked.txt' mode='w' encoding='UTF-8'>\n  open(target, \"w\").write(\"x\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n....../workspace/chats/c217f37466d0efaf41f5e709/tests/test_agents_plugins.py:65: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-agent-1e4mi73v/keep-me.txt' mode='w' encoding='UTF-8'>\n  open(victim, \"w\").write(\"important\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n......................./workspace/chats/c217f37466d0efaf41f5e709/tests/test_core.py:28: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpuhtqc38g/config.json' mode='r' encoding='UTF-8'>\n  reloaded = AppConfig.from_json(json.loads(open(path).read()))\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................................................................................../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 14043 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 14046 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..........\n----------------------------------------------------------------------\nRan 161 tests in 8.789s\n\nOK",
+      "duration": 8.96,
+      "missing": []
+    },
+    {
+      "id": "doctor_clean",
+      "title": "orbynth doctor reports honestly: every missing driver named, none faked",
+      "milestone": "M1",
+      "blocking": true,
+      "kind": "command",
+      "status": "pass",
+      "detail": "  [ok] vision     PIL\n  [--] vision     rapidocr_onnxruntime  (pip install rapidocr-onnxruntime)\n  [--] browser    playwright  (pip install playwright && playwright install chromium)\n  [ok] browser    websocket\n  [--] voice      sounddevice  (pip install sounddevice)\n  [--] voice      faster_whisper  (pip install faster-whisper)\n  [--] hud        webview  (pip install pywebview)\n  [ok] platform   Linux 6.1.102\n\nActions registered: 96\n  browser           22 actions\n  filesystem        12 actions\n  input              8 actions\n  office             7 actions\n  orchestration     15 actions\n  shell              4 actions\n  vision             6 actions\n  whatsapp          13 actions\n  windows            9 actions\n\nPlugins: 0 installed\n\nMemory: {\"agents\": 0, \"episodes\": 0, \"facts\": 0, \"messages\": 0, \"tasks\": 0, \"audit\": 0, \"fts\": true}\n\nwarning: Some desktop drivers are not installed here: browser, hud, input, vision, voice",
+      "duration": 0.17,
+      "missing": []
+    },
+    {
+      "id": "second_machine",
+      "title": "M0 slice passes on a second clean machine",
+      "milestone": "M1",
+      "blocking": true,
+      "kind": "manual",
+      "status": "blocked_prerequisite",
+      "detail": "needs a second clean machine; set ORBYNTH_ACCEPT_SECOND_MACHINE=1 once it exists",
+      "duration": 0.0,
+      "missing": [
+        "second_machine"
+      ]
+    },
+    {
+      "id": "input_focus_guard",
+      "title": "Typing aborts when focus drifts, and never types into nothing",
+      "milestone": "M2",
+      "blocking": true,
+      "kind": "manual",
+      "status": "blocked_prerequisite",
+      "detail": "needs a real Windows desktop with pynput/pyautogui/uiautomation installed",
+      "duration": 0.0,
+      "missing": [
+        "windows",
+        "interactive_desktop"
+      ]
+    },
+    {
+      "id": "browser_full_surface",
+      "title": "Browser: tabs, chrome icons, forms, extraction with and without vision",
+      "milestone": "M2",
+      "blocking": true,
+      "kind": "manual",
+      "status": "blocked_prerequisite",
+      "detail": "needs a desktop browser and Playwright/CDP access",
+      "duration": 0.0,
+      "missing": [
+        "windows",
+        "interactive_desktop"
+      ]
+    },
+    {
+      "id": "office_roundtrip",
+      "title": "Office: Word, Excel, Access, PowerPoint round trips through COM",
+      "milestone": "M2",
+      "blocking": true,
+      "kind": "manual",
+      "status": "blocked_prerequisite",
+      "detail": "needs a licensed Microsoft Office install; set ORBYNTH_ACCEPT_OFFICE_LICENSE=1",
+      "duration": 0.0,
+      "missing": [
+        "windows",
+        "office_license"
+      ]
+    },
+    {
+      "id": "whatsapp_pipeline",
+      "title": "WhatsApp: pair once, then send, receive, media, voice note and a real call",
+      "milestone": "M2",
+      "blocking": true,
+      "kind": "manual",
+      "status": "blocked_prerequisite",
+      "detail": "needs a WhatsApp test number and the Node sidecar built; set ORBYNTH_ACCEPT_WHATSAPP_ACCOUNT=1",
+      "duration": 0.0,
+      "missing": [
+        "whatsapp_account"
+      ]
+    },
+    {
+      "id": "plugin_lifecycle",
+      "title": "Plugin authored, validated, installed, callable, removable",
+      "milestone": "M3",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "authored+installed 'invoice_download' (capability filesystem.read); uninstall removed it",
+      "duration": 0.02,
+      "missing": []
+    },
+    {
+      "id": "supervisor_cleanup",
+      "title": "Supervised jobs die with the supervisor; orphan cleanup runs at startup",
+      "milestone": "M3",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "helper stopped with its supervisor; reconcile revisited 1 journalled job(s)",
+      "duration": 0.76,
+      "missing": []
+    },
+    {
+      "id": "owner_gate",
+      "title": "Owner gate: PIN required for irreversible work, voice alone refused, recovery rotates",
+      "milestone": "M3",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "denied without PIN (pin), allowed with it (pin), voice denied, recovery consumed and rotated (19 chars)",
+      "duration": 0.44,
+      "missing": []
+    },
+    {
+      "id": "catalog_rollback",
+      "title": "Catalog applies only when idle, retires dead model IDs, rolls back",
+      "milestone": "M3",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "blocked while busy (2 action(s) or agent(s) still in fligh), applied -1 model(s), rolled back",
+      "duration": 0.01,
+      "missing": []
+    },
+    {
+      "id": "preflight_unattended",
+      "title": "Locked screen, battery, audio and busy machine produce honest decisions",
+      "milestone": "M3",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "locked->defer, isolated->run_isolated, busy->defer, no-audio->skip, user-request->run_now",
+      "duration": 0.0,
+      "missing": []
+    },
+    {
+      "id": "risk_tiered_verification",
+      "title": "Risk tiers: batched harmless work, never-shortcut irreversible work",
+      "milestone": "M3",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "12 verified immediately, 84 batched, 0 optimistic (rolled back on failure), 8 never shortcut",
+      "duration": 0.01,
+      "missing": []
+    },
+    {
+      "id": "language_rtl",
+      "title": "Urdu/Arabic: direction, detection, digit normalisation, OCR packs",
+      "milestone": "M3",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "ur/ar rtl ok, digits normalised, profile=rtl, ocr=urd+ara",
+      "duration": 0.0,
+      "missing": []
+    },
+    {
+      "id": "billing_modes",
+      "title": "BYOK default; hosted gateway disarmed without legal review and abuse caps",
+      "milestone": "M3",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "unguarded blocked (['gateway_no_legal_review', 'gateway_resale_unconfirmed']), armed allows (within caps), caps enforced, byok issues=0",
+      "duration": 0.0,
+      "missing": []
+    },
+    {
+      "id": "governor_responsive",
+      "title": "Background work yields during games/calls; user-requested work does not",
+      "milestone": "M3",
+      "blocking": true,
+      "kind": "ops",
+      "status": "pass",
+      "detail": "critical allowed, background deferred during a game (background work deferred: busy: game), resumed when idle",
+      "duration": 0.0,
+      "missing": []
+    }
+  ]
+}

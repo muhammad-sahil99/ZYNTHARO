@@ -1,0 +1,15 @@
+{
+  "name": "__NAME__",
+  "version": "0.1.0",
+  "description": "__DESCRIPTION__",
+  "author": "ORBYNTH Artificer",
+  "entry": "actions.py",
+  "kind": "python",
+  "capabilities": __CAPABILITIES__,
+  "actions": __ACTIONS__,
+  "created_at": __CREATED_AT__,
+  "schema_version": 1,
+  "source": "forged",
+  "task": "__TASK__",
+  "runtime": "__RUNTIME__"
+}
