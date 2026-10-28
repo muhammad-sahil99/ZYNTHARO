@@ -24,6 +24,9 @@ the HUD instead of pretending.
 | need | used for | without it |
 |---|---|---|
 | Provider API keys (Gemini/OpenAI/Anthropic/…) | real model calls | the app runs against the offline `echo` provider only |
+| A Telegram bot token (`ORBYNTH_TELEGRAM_TOKEN`) | the reply desk over Telegram | the channel reports `needs_setup` with that instruction; nothing is sent |
+| A WhatsApp account to pair, plus a second phone to test with | reply desk over WhatsApp, media and call acceptance | the channel stays unpaired and refuses instead of queueing messages |
+| Meta business account + reviewed app (only if Instagram/Messenger is ever sold) | DM access | those platforms stay declared unavailable, with the gate shown to the customer |
 | Microsoft 365 test tenant + Office licences | Office Tier A acceptance, Outlook/Word/Excel/Excel-macro tests | Tier A checks are marked *blocked*, not passed; Tier B (file-based) still works |
 | Google test tenant | Gmail-related acceptance | those checks stay blocked |
 | Test WhatsApp numbers (two, plus a spare) | pairing, chats, media, call tests | WhatsApp checks stay blocked; the code refuses rather than faking |

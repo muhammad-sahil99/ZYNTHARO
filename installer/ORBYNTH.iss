@@ -1,5 +1,7 @@
 ; ORBYNTH Windows installer. Build on Windows with Inno Setup 6 after tools/build_windows_bundle.py.
 ; The build wrapper validates payload/bundle-manifest.json before invoking this script.
+; Windows 10 1809 is the floor because that is where per-monitor DPI awareness and the UI
+; Automation APIs this product depends on are reliably present; Windows 11 is the primary target.
 #define ProductName "ORBYNTH"
 #define ProductVersion GetEnv("ORBYNTH_VERSION")
 #if ProductVersion == ""
@@ -25,6 +27,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0.17763
 PrivilegesRequired=lowest
 UninstallDisplayName=ORBYNTH
 ; Signing is intentionally supplied by the private release environment, never committed here.

@@ -64,6 +64,12 @@ CAPABILITIES: tuple[str, ...] = (
     "office.powerpoint",
     "office.macro",
     "office.print",
+    # Outbound messaging through a connected platform. Sending is irreversible because a sent
+    # message cannot be recalled, so ``channel.send`` is owner-only (see ops/risk.py).
+    "channel.read",
+    "channel.send",
+    # A packaged business process (invoice intake, reply desk, recurring report).
+    "workflow.run",
     "whatsapp.pair",
     "whatsapp.chat",
     "whatsapp.media",
@@ -314,6 +320,7 @@ class SafetyConfig:
             "plugin.uninstall",
             "whatsapp.call",
             "process.kill",
+            "channel.send",
         ]
     )
     audit_keep_days: int = 90

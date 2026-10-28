@@ -70,6 +70,10 @@ class Stack:
     #: Failure memory and work queued for later.
     lessons: Any = None
     scheduler: Any = None
+    #: The sellable surface: connected platforms and the three business workflows.
+    channels: Any = None
+    workflows: dict[str, Any] = field(default_factory=dict)
+    reply_desk: Any = None
 
     def shutdown(self) -> None:
         if self.index is not None:
@@ -232,6 +236,22 @@ def build_stack(
         preflight=preflight,
     )
     orchestration.set_services(orchestration.Services(orchestrator, runtime, memory, bus, config))
+
+    # Channels and workflows are the product the customer buys: the platforms they already use,
+    # and the three processes that remove recurring work. Both are created here so the CLI, the
+    # HUD and the fleet's tools share one registry and one outbox.
+    from .actions import channels as channel_actions
+    from .channels import default_registry
+    from .workflows import DailyReport, InvoiceIntake, ReplyDesk
+
+    channel_registry = default_registry(str(config.home_path))
+    reply_desk = ReplyDesk(config.home_path / "reply_desk.db")
+    workflow_map: dict[str, Any] = {
+        "invoice_intake": InvoiceIntake(),
+        "daily_report": DailyReport(),
+        "reply_desk": reply_desk,
+    }
+    channel_actions.set_services(channel_actions.ChannelServices(channel_registry, workflow_map, reply_desk))
     if start_agents:
         orchestrator.bootstrap_roster()
 
@@ -311,6 +331,9 @@ def build_stack(
         verifier=verifier,
         sensors=sensors,
         index=search_index,
+        channels=channel_registry,
+        workflows=workflow_map,
+        reply_desk=reply_desk,
     )
 
     # Presence: who is talking, who is in the room, and whether speaking aloud is appropriate.
@@ -728,6 +751,76 @@ def cmd_team(args: argparse.Namespace) -> int:
     disputed = [r for r in result["reports"] if r.get("status") == "disputed"]
     stack.shutdown()
     return 0 if not disputed else 1
+
+
+def cmd_channels(args: argparse.Namespace) -> int:
+    """What each platform can really do here, and the honest offer for the rest."""
+    from .channels import declared_platforms
+
+    config = load_config(args.config)
+    stack = build_stack(config, start_agents=False, load_plugins=False)
+    try:
+        if args.action == "send":
+            channel = stack.channels.get(args.channel)
+            print(json.dumps(channel.send(args.chat, args.text), indent=2))
+            return 0
+        if args.action == "inbox":
+            channel = stack.channels.get(args.channel)
+            rows = channel.inbox(limit=args.limit, chat=args.chat)
+            print(json.dumps([row.to_json() for row in rows], indent=2))
+            return 0
+        payload = {"channels": stack.channels.to_json(), "catalogue": declared_platforms()}
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            for row in payload["channels"]:
+                print(f"{row['state']:<12} {row['name']:<10} {row['detail']}")
+        return 0
+    finally:
+        stack.shutdown()
+
+
+def cmd_workflows(args: argparse.Namespace) -> int:
+    """The three business processes, runnable against the customer's own folders."""
+    config = load_config(args.config)
+    stack = build_stack(config, start_agents=False, load_plugins=False)
+    try:
+        if args.action == "list" or not args.name:
+            from .workflows import catalogue
+
+            rows = catalogue()
+            if args.json:
+                print(json.dumps(rows, indent=2))
+            else:
+                for row in rows:
+                    print(f"{row['name']:<16} {row['title']}")
+                    print(f"  {row['description']}")
+                    print(f"  needs: {row['needs']}")
+            return 0
+        params = json.loads(args.params) if args.params else {}
+        workflow = stack.workflows.get(args.name)
+        if workflow is None:
+            print(f"error: unknown workflow {args.name!r}; known: {', '.join(sorted(stack.workflows))}", file=sys.stderr)
+            return 2
+        if args.name == "reply_desk":
+            channel = stack.channels.get(params.pop("channel", "telegram"))
+            result = workflow.run(channel, **params)
+        else:
+            result = workflow.run(**params)
+        payload = result.to_json()
+        print(json.dumps(payload, indent=2) if args.json else _format_workflow(payload))
+        return 0 if payload["status"] in {"done", "partial"} else 1
+    finally:
+        stack.shutdown()
+
+
+def _format_workflow(payload: dict[str, Any]) -> str:
+    lines = [f"{payload['workflow']}: {payload['status']} — {payload['summary']}"]
+    for step in payload.get("steps", []):
+        lines.append(f"  [{step['status']:<7}] {step['name']:<28} {step['detail']}")
+    for problem in payload.get("problems", []):
+        lines.append(f"  problem: {problem}")
+    return "\n".join(lines)
 
 
 def cmd_agents(args: argparse.Namespace) -> int:
@@ -1193,6 +1286,22 @@ def build_parser() -> argparse.ArgumentParser:
     team.add_argument("--items", help="JSON array of work items")
     team.add_argument("--sequential", action="store_true")
     team.set_defaults(func=cmd_team)
+
+    channels = sub.add_parser("channels", help="connected platforms, their real state, and the rest with reasons")
+    channels.add_argument("action", nargs="?", default="status", choices=["status", "send", "inbox"])
+    channels.add_argument("--channel", default="telegram")
+    channels.add_argument("--chat", default="")
+    channels.add_argument("--text", default="")
+    channels.add_argument("--limit", type=int, default=20)
+    channels.add_argument("--json", action="store_true")
+    channels.set_defaults(func=cmd_channels)
+
+    workflows = sub.add_parser("workflows", help="the business workflows this build ships")
+    workflows.add_argument("action", nargs="?", default="list", choices=["list", "run"])
+    workflows.add_argument("--name", default="")
+    workflows.add_argument("--params", default="", help="JSON object of the workflow's own parameters")
+    workflows.add_argument("--json", action="store_true")
+    workflows.set_defaults(func=cmd_workflows)
 
     agents = sub.add_parser("agents", help="roster and quota report")
     agents.add_argument("--json", action="store_true")

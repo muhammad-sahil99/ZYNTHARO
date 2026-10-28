@@ -42,7 +42,7 @@ def requirements() -> list[dict[str, str]]:
     playwright_cache = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")
     chromium_dir = Path(playwright_cache).expanduser() if playwright_cache else None
     return [
-        {"name": "Windows host", "ok": str(platform.system() == "Windows"), "fix": "Build the release bundle on Windows."},
+        {"name": "Windows host", "ok": str(platform.system() == "Windows"), "fix": "Build the release bundle on Windows 10 1809+ or Windows 11."},
         {"name": "PyInstaller", "ok": str(shutil.which("pyinstaller") is not None), "fix": "Install the packaging extra: pip install -e .[packaging]."},
         {"name": "HUD assets", "ok": str((ROOT / "hud" / "index.html").is_file()), "fix": "Restore the hud directory."},
         {"name": "WhatsApp sidecar", "ok": str((ROOT / "sidecars" / "whatsapp" / "sidecar.js").is_file()), "fix": "Restore sidecars/whatsapp."},

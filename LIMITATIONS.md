@@ -4,6 +4,20 @@ Nothing in this file is a plan in disguise. Each entry says what is missing, wha
 when they hit it, and what would close it. A limitation discovered later that is not written here
 is a bug in this file.
 
+## Channels: what is offered and what is refused
+
+* **Offered:** Telegram (official Bot API — a free bot token, no phone or review) and WhatsApp
+  (the bundled sidecar, which automates the web session and therefore carries account risk that
+  the customer is told about before pairing).
+* **Needs the customer's credentials:** Discord needs a bot token from the developer portal.
+* **Not offered, with the reason shown in the app:** Instagram and Messenger (Meta business
+  account, reviewed app, messaging permission), X/Twitter DMs (paid API tier), LinkedIn, TikTok
+  and Snapchat (no third-party messaging API). `orbynth channels` prints this list; selecting one
+  raises an error containing the reason rather than pretending to connect.
+* **Replies are never sent unattended.** The reply desk prepares drafts; the owner approves each
+  one. This is a product decision, not a missing feature: one wrong automatic message to a customer
+  costs more than every hour the feature saves.
+
 ## Not built at all
 
 | spec | missing | what you see today |

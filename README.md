@@ -141,6 +141,33 @@ The HUD is the product's face and it is not a chat box with a gradient:
 - **Voice by default.** The microphone is live on launch. A chat input exists and is
   toggled from the menu for when the user prefers typing.
 
+## The product: three workflows, real channels
+
+What is sold is not the tool count, it is three recurring jobs, each with its own verification
+(see [PRODUCT.md](PRODUCT.md)):
+
+```bash
+orbynth workflows list
+orbynth workflows run --name invoice_intake \
+  --params '{"source":"~/Invoices/in","dest":"~/Invoices/filed","ledger":"~/Invoices/ledger.xlsx"}'
+orbynth workflows run --name daily_report \
+  --params '{"ledger":"~/Invoices/ledger.xlsx","out_dir":"~/Reports"}'
+orbynth channels            # which platform can actually be used here, and why the others cannot
+```
+
+- **Invoice intake** files every new invoice by year and quarter and records it once in an Excel
+  ledger. Re-running it is free: identical content is skipped by hash.
+- **Reply desk** collects customer messages and prepares replies; **nothing is sent until the
+  owner approves it** (`orbynth` action `reply_approve`, or the app). Drafts live in SQLite, so a
+  crash loses no work and no message is answered twice.
+- **Recurring report** writes a Word summary and an Excel breakdown from the ledger and reads both
+  back to prove the totals.
+
+Channels are honest by construction: Telegram uses the official Bot API, WhatsApp uses the bundled
+sidecar, and Instagram, Messenger, X, LinkedIn, TikTok and Snapchat are declared unavailable with
+the exact business gate that would change that — they refuse with the reason instead of showing a
+button that never works.
+
 ## Automation: what a task actually does
 
 The action layer is verified, not assumed. Three behaviours matter more than the action count:

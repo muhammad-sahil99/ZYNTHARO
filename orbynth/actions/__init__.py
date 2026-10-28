@@ -15,6 +15,7 @@ from ..events import EventBus
 from ..llm.providers import ToolSpec
 from . import (
     browser,
+    channels,
     filesystem,
     fleet,
     hardware,
@@ -46,6 +47,7 @@ from .registry import (
 
 DRIVER_MODULES = (
     registry_module,
+    channels,
     filesystem,
     shell,
     terminal,

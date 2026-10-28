@@ -10,7 +10,7 @@ This is the **declared surface** of the product, across every platform the tools
 | `provisional` | implemented and usable here, but not yet proven on a real app | no — every receipt from it is labelled UNVERIFIED |
 | `unavailable` | no driver here, or the wrong platform | no — hidden from agents, shown to the user as "not available on this machine" |
 
-**179 declared tool(s)** in 16 group(s): 0 green, 155 provisional, 24 unavailable on every supported platform. 0 tool(s) have recorded real runs.
+**187 declared tool(s)** in 18 group(s): 0 green, 155 provisional, 32 unavailable on every supported platform. 0 tool(s) have recorded real runs.
 
 ## Declared tools
 
@@ -184,6 +184,9 @@ Hidden from every agent until the driver is present and the platform matches (sp
 | `agent_requests` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
 | `agent_send_file` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
 | `agent_thread` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `channel_inbox` | channels | the 'channels' group has no driver profile, so this cannot be claimed | — |
+| `channel_send` | channels | the 'channels' group has no driver profile, so this cannot be claimed | — |
+| `channel_status` | channels | the 'channels' group has no driver profile, so this cannot be claimed | — |
 | `hw_alerts` | hardware | the 'hardware' group has no driver profile, so this cannot be claimed | — |
 | `hw_explain` | hardware | the 'hardware' group has no driver profile, so this cannot be claimed | — |
 | `hw_history` | hardware | the 'hardware' group has no driver profile, so this cannot be claimed | — |
@@ -202,6 +205,11 @@ Hidden from every agent until the driver is present and the platform matches (sp
 | `model_add` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
 | `model_reserves` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
 | `model_retire` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `reply_approve` | workflows | the 'workflows' group has no driver profile, so this cannot be claimed | — |
+| `reply_pending` | workflows | the 'workflows' group has no driver profile, so this cannot be claimed | — |
+| `reply_reject` | workflows | the 'workflows' group has no driver profile, so this cannot be claimed | — |
+| `workflow_list` | workflows | the 'workflows' group has no driver profile, so this cannot be claimed | — |
+| `workflow_run` | workflows | the 'workflows' group has no driver profile, so this cannot be claimed | — |
 
 ## Evidence problems (nothing here counts as proof)
 

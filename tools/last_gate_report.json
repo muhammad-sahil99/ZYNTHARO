@@ -1,6 +1,6 @@
 {
-  "generated_at": 1793199927.7265537,
-  "generated_at_iso": "2026-10-28 15:05:27",
+  "generated_at": 1793202280.839002,
+  "generated_at_iso": "2026-10-28 15:44:40",
   "machine": {
     "platform": "Linux-6.1.102-x86_64-with-glibc2.39",
     "python": "3.12.3"
@@ -46,7 +46,7 @@
       "kind": "ops",
       "status": "pass",
       "detail": "task through gate->driver->evidence->memory->bus; 2 topics; delete correctly denied (capability denied: filesystem.delete)",
-      "duration": 0.12,
+      "duration": 0.15,
       "missing": []
     },
     {
@@ -56,8 +56,8 @@
       "blocking": true,
       "kind": "ops",
       "status": "pass",
-      "detail": "77 file(s) scanned, 0 banned patterns (0 test-harness hit(s) allowed and listed)",
-      "duration": 0.57,
+      "detail": "88 file(s) scanned, 0 banned patterns (0 test-harness hit(s) allowed and listed)",
+      "duration": 0.61,
       "missing": []
     },
     {
@@ -68,7 +68,7 @@
       "kind": "ops",
       "status": "pass",
       "detail": "exactly-once held (ledger=1 line, replayed=True); reconciled 1 landed / 1 never ran / 1 needs a decision (entry 4); undo plan=1 of 2 action(s) can be reversed; 1 refused as irreversible, 0 have no undo; undo reversed 1 action(s)",
-      "duration": 0.03,
+      "duration": 0.04,
       "missing": []
     },
     {
@@ -78,8 +78,8 @@
       "blocking": true,
       "kind": "command",
       "status": "pass",
-      "detail": "  open(os.path.join(folder, \"f.txt\"), \"w\").write(\"x\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:106: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-fm30c4ba/cfg.ini' mode='r' encoding='UTF-8'>\n  self.assertIn(\"fast\", open(target).read())\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................../workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:45: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-utt8j05d/doomed.txt' mode='w' encoding='UTF-8'>\n  open(target, \"w\").write(\"bye\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n......./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:825: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/orbynth/actions/whatsapp.py' mode='r' encoding='utf-8'>\n  client = open(os.path.join(self.root(), \"orbynth\", \"actions\", \"whatsapp.py\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n/workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:826: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:835: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../workspace/chats/c2",
-      "duration": 9.31,
+      "detail": "  open(os.path.join(folder, \"f.txt\"), \"w\").write(\"x\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:106: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-sjwm33ua/cfg.ini' mode='r' encoding='UTF-8'>\n  self.assertIn(\"fast\", open(target).read())\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................../workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:45: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-5u51510p/doomed.txt' mode='w' encoding='UTF-8'>\n  open(target, \"w\").write(\"bye\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n......./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:825: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/orbynth/actions/whatsapp.py' mode='r' encoding='utf-8'>\n  client = open(os.path.join(self.root(), \"orbynth\", \"actions\", \"whatsapp.py\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n/workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:826: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:835: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../workspace/chats/c2",
+      "duration": 9.42,
       "missing": []
     },
     {
@@ -89,8 +89,8 @@
       "blocking": true,
       "kind": "command",
       "status": "pass",
-      "detail": "....../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 9373 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................................................/usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 9386 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 9397 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 9400 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..............\n----------------------------------------------------------------------\nRan 73 tests in 3.801s\n\nOK",
-      "duration": 3.96,
+      "detail": "....../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 18399 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................................................/usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 18412 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 18422 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 18425 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..............\n----------------------------------------------------------------------\nRan 73 tests in 3.708s\n\nOK",
+      "duration": 3.86,
       "missing": []
     }
   ]

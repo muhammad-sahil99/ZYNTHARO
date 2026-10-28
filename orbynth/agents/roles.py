@@ -126,6 +126,10 @@ FOREMAN = RoleTemplate(
         "presence.decide",
         "voice.identify",
         "task.schedule",
+        # A Foreman runs the customer's workflows and reads the reply desk; it may prepare a
+        # reply but never send one (``channel.send`` is owner-only).
+        "workflow.run",
+        "channel.read",
     ),
     insignia="▲",
     color="#9d7bff",
@@ -162,6 +166,10 @@ OPERATIVE = RoleTemplate(
         # finish "zip the folder" without escalating to the Sovereign.
         "archive.zip",
         "archive.unzip",
+        # Workflows are the product's actual jobs; reading a channel is required to prepare a
+        # reply, while sending stays with the owner.
+        "workflow.run",
+        "channel.read",
     ),
     insignia="●",
     color="#4ade80",
@@ -350,6 +358,7 @@ OWNER_ONLY_CAPABILITIES: dict[str, str] = {
     "office.macro": "a macro executes arbitrary code inside a document, so it is never an agent's step",
     "plugin.uninstall": "removing capability changes the product itself and is the owner's call",
     "voice.enroll": "voice enrolment is biometric: the owner does it, nobody does it to them",
+    "channel.send": "a delivered message cannot be recalled, so an agent may prepare a reply but only the owner sends it",
     "camera.enroll": "camera consent and face enrolment are the owner's own acts, taken in the interface or with the PIN",
 }
 

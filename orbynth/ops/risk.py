@@ -31,6 +31,8 @@ IRREVERSIBLE_CAPABILITIES: frozenset[str] = frozenset(
         "browser.eval",
         # outward-facing and self-modifying
         "whatsapp.call",
+        # A delivered message cannot be recalled: the customer has already read it.
+        "channel.send",
         "plugin.install",
         "plugin.uninstall",
         # fleet control: moving the model under a running agent loses its context, and a

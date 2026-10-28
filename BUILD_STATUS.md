@@ -55,6 +55,12 @@ Read the three markers literally:
 | Scheduled work: one-shot and recurring, grace window, gated GUI runs, bounded tick | done | `tests/test_schedule.py`, `orbynth/ops/schedule.py` |
 | Semantic search (embeddings, `sqlite-vec`) | unbuilt | lexical only; see LIMITATIONS |
 | MCP client/server, local REST/WS API, SDKs | unbuilt | spec 15 |
+| Workflows: invoice intake (file, dedupe, xlsx ledger, read-back) | done (file work is OS-independent) | `tests/test_workflows.py`, gate `tests_core` |
+| Workflows: reply desk (durable outbox, mandatory approval, wrong-platform refusal) | done | `tests/test_workflows.py` |
+| Workflows: recurring report (docx + xlsx, totals read back) | done | `tests/test_workflows.py` |
+| Channels: Telegram Bot API (send, poll, offset, platform errors) | partial — transport verified against a real local Bot API server; a live bot needs the owner's token | `tests/test_workflows.py` (`TelegramChannelTests`) |
+| Channels: WhatsApp sidecar adapter | partial | adapter refuses when unpaired; live pairing acceptance pending |
+| Channels: Instagram/Messenger/X/LinkedIn/TikTok/Snapchat | declared unavailable with the exact business gate | `orbynth/channels/registry.py`, `tests/test_workflows.py` |
 | Windows application payload builder (embedded Python/HUD/sidecar/browser manifest) | partial | `tools/build_windows_bundle.py`, `tests/test_packaging.py`; requires Windows release inputs |
 | Signed Windows installer definition and hash-validated input gate | partial | `installer/ORBYNTH.iss`, `tools/build_windows_installer.py`, `tests/test_packaging.py`; needs a Windows signing environment and clean-VM acceptance |
 
@@ -75,8 +81,8 @@ sign-off recorded in them.
 
 ## What the numbers on this machine mean
 
-The Capability Matrix on this host reports **0 green / 155 provisional / 24 unavailable** tool
-rows (179 declared tools). That is not a regression and it is not modesty: *green* requires a recorded successful run
+The Capability Matrix on this host reports **0 green / 155 provisional / 32 unavailable** tool
+rows (187 declared tools). That is not a regression and it is not modesty: *green* requires a recorded successful run
 with evidence from this machine, and the automated suite runs against an offline `echo` provider,
 so its runs do not count as proof of a desktop capability. A tool becomes green the first time
 it really runs here and its run is recorded in `artifacts/capability_evidence.json`.
