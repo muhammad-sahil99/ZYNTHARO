@@ -205,6 +205,8 @@
       <button data-tab="hardware" class="tab">Hardware</button>
       <button data-tab="index" class="tab">Index</button>
       <button data-tab="matrix" class="tab">Matrix</button>
+      <button data-tab="comms" class="tab">Comms</button>
+      <button data-tab="reserves" class="tab">Reserves</button>
     </nav>
 
     <section data-panel="transcript" class="tab-panel active">
@@ -243,6 +245,22 @@
     <section data-panel="security" class="tab-panel">
       <p class="hint">Owner identity. Irreversible work (delete, send, call, install, macro, shell) needs your PIN; a voice match alone never authorises it, because voices can be cloned. Profiles are per OS user, so a shared PC has two owners.</p>
       <div id="security" class="table"></div>
+    </section>
+
+    <section data-panel="comms" class="tab-panel">
+      <p class="hint">Fleet comms. Agents ask each other for help, answer, and hand over files; every message is stored in a thread, and an unanswered request stays visible here until someone answers it. A request addressed to <code>role:cartographer</code> goes to whichever agent holds that role today.</p>
+      <div class="row">
+        <button id="comms-refresh" class="pill tiny">refresh</button>
+        <span id="comms-stats" class="sig-value">—</span>
+      </div>
+      <div id="comms" class="plugins"></div>
+      <div id="comms-requests" class="table"></div>
+    </section>
+
+    <section data-panel="reserves" class="tab-panel">
+      <p class="hint">The model bench. Each model is added with the limits it is held to — requests and tokens per minute, per day and per week. A <em>reserve</em> is registered and quota-tracked but assigned to nobody until the Control Manager activates it, so spare capacity is known instead of guessed.</p>
+      <div id="reserves" class="table"></div>
+      <div id="reserves-foot" class="panel-foot"></div>
     </section>
 
     <section data-panel="updates" class="tab-panel">

@@ -16,6 +16,7 @@ from ..llm.providers import ToolSpec
 from . import (
     browser,
     filesystem,
+    fleet,
     hardware,
     input_control,
     localsearch,
@@ -56,6 +57,7 @@ DRIVER_MODULES = (
     browser,
     whatsapp,
     orchestration,
+    fleet,
 )
 
 
@@ -134,6 +136,7 @@ __all__ = [
     "build_registry",
     "driver_report",
     "orchestration",
+    "fleet",
     "filesystem",
     "shell",
     "terminal",

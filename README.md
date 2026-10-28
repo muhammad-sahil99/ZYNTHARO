@@ -210,8 +210,10 @@ orbynth/            Python core package (stdlib-first)
   config.py         settings, providers, quota specs, agent roster
   events.py         typed async event bus; every HUD wire and log line comes from here
   memory.py         SQLite per-agent memory (episodic + semantic + shared board)
-  llm/              provider registry, quota manager, fallback runtime
-  agents/           identity/ranks, agent loop, orchestrator (teams, delegation, reports)
+  llm/              provider registry, quota manager (minute/day/week windows), fallback
+                    runtime, reserve pool (models added with limits, called up by the Steward)
+  agents/           identity/ranks, agent loop, orchestrator (teams, delegation, reports),
+                    comms (agent-to-agent requests, answers, file handoff, stored threads)
   actions/          capability-gated action drivers (input, vision, windows, office,
                     filesystem, browser, whatsapp, shell)
   plugins/          manifest, loader, sandboxed host, self-extension Forge

@@ -43,6 +43,10 @@ Legend: **T** = unit/integration test, **G** = release-gate operation (`python t
 | 22.10 | Safe updates, retired models, signed catalogue | `orbynth/ops/catalog.py`, `orbynth/ops/update.py` | T `test_ops.py`, G `catalog_rollback` |
 | 22.11 | Other languages, RTL, PC responsiveness, low priority | `orbynth/ops/languages.py`, `orbynth/ops/governor.py` | T `test_ops.py`, G `language_rtl`, `governor` |
 
+| fleet comms | Agents ask each other for help, answer, hand over files; every message stored in a thread, open requests stay visible | `orbynth/agents/comms.py`, `orbynth/actions/fleet.py` | T `test_comms.py` |
+| reserve models | A model is added with its rpm/rpd/rpw and tpm/tpd/tpw envelope, optionally as a reserve; activation is the manager's authority | `orbynth/llm/reserve.py`, `orbynth/actions/fleet.py` | T `test_reserve.py` |
+| control manager | The Steward holds `model.manage` and `agent.messaging`; reserves are quota-tracked from the first call and assigned to nobody until activated | `orbynth/agents/roles.py`, `orbynth/config.py` | T `test_reserve.py` |
+
 ## How to keep this honest
 
 1. A change that adds a capability adds a row here and a check to `tools/acceptance.json`.

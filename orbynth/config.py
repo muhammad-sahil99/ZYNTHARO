@@ -73,7 +73,9 @@ CAPABILITIES: tuple[str, ...] = (
     "plugin.uninstall",
     "agent.spawn",
     "agent.control",
+    "agent.messaging",
     "model.assign",
+    "model.manage",
     "memory.admin",
 )
 
@@ -115,6 +117,13 @@ class ModelSpec:
     rpd: int | None = None  # requests per day
     tpm: int | None = None  # tokens per minute
     tpd: int | None = None  # tokens per day
+    #: Weekly envelopes. Providers publish these as "weekly" caps; without them a model
+    #: with a generous daily limit could be spent flat by Tuesday and the Steward would
+    #: only find out from a 429.
+    rpw: int | None = None  # requests per week
+    tpw: int | None = None  # tokens per week
+    #: Holds this model out of ordinary assignment until the Control Manager activates it.
+    reserve: bool = False
     context_window: int = 128_000
     supports_tools: bool = True
     supports_vision: bool = True

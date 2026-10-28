@@ -32,6 +32,16 @@ AGENT_STATUS = "agent.status"
 AGENT_MESSAGE = "agent.message"
 AGENT_REPORT = "agent.report"
 AGENT_ERROR = "agent.error"
+#: Inter-agent comms: memos, help requests, answers and file handoffs between agents. The
+#: fleet talks to itself, and every message is a stored fact, not a whisper.
+AGENT_COMMS = "agent.comms"
+AGENT_HELP_REQUEST = "agent.help_request"
+AGENT_HELP_ANSWERED = "agent.help_answered"
+
+#: Reserve model activated or retired, and limits recorded/refused (Control Manager).
+MODEL_RESERVE = "model.reserve"
+MODEL_LIMITS = "model.limits"
+
 TASK_CREATED = "task.created"
 TASK_ASSIGNED = "task.assigned"
 TASK_DONE = "task.done"

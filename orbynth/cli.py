@@ -235,6 +235,34 @@ def build_stack(
         hardware_actions.set_monitor(sensors)
         sensors.start()
 
+    # Inter-agent comms and the model bench. Both need the roster and the quotas, so they are
+    # created after the orchestrator exists — but before the HUD, which shows them.
+    from .actions import fleet as fleet_actions
+    from .agents.comms import AgentComms
+    from .llm.reserve import ReservePool
+
+    comms = AgentComms(
+        config.home_path / "comms.db",
+        bus,
+        roster=lambda: [
+            {"agent_id": a.id, "name": a.name, "role": a.identity.role, "rank": a.identity.rank}
+            for a in orchestrator.agents.values()
+        ],
+        memory=memory,
+    )
+    reserves = ReservePool(config, quotas, bus, path=config.home_path / "reserves.json")
+    fleet_actions.set_services(
+        fleet_actions.FleetServices(
+            comms=comms,
+            reserves=reserves,
+            orchestrator=orchestrator,
+            runtime=runtime,
+            config=config,
+            memory=memory,
+            bus=bus,
+        )
+    )
+
     stack = Stack(
         config=config,
         bus=bus,
@@ -277,12 +305,16 @@ def build_stack(
             verifier=verifier,
             sensors=stack.sensors,
             index=stack.index,
+            comms=comms,
+            reserves=reserves,
         )
         hud.forge = forge  # type: ignore[attr-defined]
         if voice is not None:
             voice.on_utterance = lambda text: hud._run_sovereign(text)  # noqa: SLF001 - single wiring point
         stack.hud = hud
     stack.journal = journal
+    stack.comms = comms
+    stack.reserves = reserves
     return stack
 
 

@@ -33,6 +33,9 @@
     hardware: null,
     capabilities: null,
     search: null,
+    // fleet comms and the model bench (reserve models with declared limits)
+    comms: null,
+    reserves: null,
     searchHits: [],
     scene: null,
     // 3D explanation window: the renderer is driven by the main animation loop, so closing the
@@ -164,6 +167,39 @@
       const changed = (payload.updated || 0) + (payload.removed || 0);
       if (changed) coreState("index scan", changed + " document(s) changed");
       renderIndex();
+    },
+    /* ---- fleet comms and the model bench ---- */
+    "agent.comms": (e) => {
+      core.pulseShear(0.15);
+      const p = e.payload || {};
+      coreState("fleet message", (p.from || "?") + " → " + (p.to || "?"));
+      renderCommsSoon();
+    },
+    "agent.help_request": (e) => {
+      // A request for help is work waiting on a person or a sibling, so it is visible, not a
+      // debug line: the core shears and the comms panel gains an open row.
+      const p = e.payload || {};
+      core.pulseShear(0.4);
+      coreState("agent needs help", (p.from || "?") + ": " + (p.subject || ""));
+      renderCommsSoon();
+    },
+    "agent.help_answered": (e) => {
+      const p = e.payload || {};
+      core.pulseEnergy(0.35);
+      coreState("help answered", (p.from || "?") + " → " + (p.to || "?"));
+      renderCommsSoon();
+    },
+    "model.reserve": (e) => {
+      const p = e.payload || {};
+      core.pulseShear(0.3);
+      coreState(p.action === "activate" ? "reserve called up" : "model stood down", (p.model || "") + (p.reason ? " — " + p.reason : ""));
+      renderReservesSoon();
+    },
+    "model.limits": (e) => {
+      const p = e.payload || {};
+      core.pulseEnergy(0.2);
+      coreState("model limits recorded", (p.model || "") + " · " + (p.describe || ""));
+      renderReservesSoon();
     },
     "system.log": () => {},
 
@@ -607,6 +643,8 @@
     if (snapshot.jobs) state.jobs = snapshot.jobs;
     if (snapshot.verdicts) state.verdicts = snapshot.verdicts;
     if (snapshot.preflight) state.preflight = snapshot.preflight;
+    if (snapshot.comms) state.comms = snapshot.comms;
+    if (snapshot.reserves) state.reserves = snapshot.reserves;
     if (snapshot.hardware) state.hardware = snapshot.hardware;
     if (snapshot.capabilities) state.capabilities = snapshot.capabilities;
     if (snapshot.search) state.search = snapshot.search;
@@ -628,6 +666,8 @@
     renderHardware();
     renderIndex();
     renderCapabilities();
+    renderComms();
+    renderReserves();
     wires.setAgents(state.agents);
     renderWidgets();
     deriveBase();
@@ -743,6 +783,114 @@
         '<span style="color:var(--ink-dim)">' + escapeHtml(note || "") + "</span>";
       container.appendChild(row);
     });
+  }
+
+  /* ---- fleet comms and the model bench ---- */
+  // Events arrive several times a second during a busy task; re-rendering on each one would
+  // rebuild the panel faster than it can be read. Coalesce to one paint per frame-ish window.
+  let commsSoon = null;
+  let reservesSoon = null;
+  function renderCommsSoon() {
+    if (commsSoon) return;
+    commsSoon = setTimeout(() => {
+      commsSoon = null;
+      renderComms();
+    }, 120);
+  }
+
+  function renderReservesSoon() {
+    if (reservesSoon) return;
+    reservesSoon = setTimeout(() => {
+      reservesSoon = null;
+      renderReserves();
+    }, 120);
+  }
+
+  function renderComms() {
+    const container = $("comms");
+    const stats = $("comms-stats");
+    const comms = state.comms || {};
+    const summary = comms.stats || {};
+    if (stats) {
+      stats.textContent =
+        (summary.messages || 0) + " message(s) · " + (summary.threads || 0) + " thread(s) · " +
+        (summary.open_requests || 0) + " open request(s)";
+    }
+    if (container) {
+      container.innerHTML = "";
+      const recent = comms.recent || [];
+      if (!recent.length) {
+        container.innerHTML =
+          '<p class="hint">No messages yet. Agents ask each other for help through here — a question to a sibling model is cheaper than escalating to the Sovereign, and the answer stays in the thread.</p>';
+      }
+      recent.slice(0, 16).forEach((msg) => {
+        const node = document.createElement("div");
+        const open = msg.kind === "request" && !msg.answered;
+        node.className = "plugin" + (open ? " bad" : "");
+        const files = (msg.attachments || []).length;
+        node.innerHTML =
+          '<div class="p-name" dir="auto">' + escapeHtml(msg.sender_name || "?") + " → " +
+          escapeHtml(msg.recipient || "?") + " <span class='chip'>" + escapeHtml(msg.kind || "memo") +
+          (open ? " · waiting" : msg.answered ? " · answered" : "") + (files ? " · " + files + " file(s)" : "") + "</span></div>" +
+          '<div class="p-meta" dir="auto">' + escapeHtml((msg.subject || msg.body || "").slice(0, 220)) + "</div>";
+        container.appendChild(node);
+      });
+    }
+    const requests = $("comms-requests");
+    if (requests) {
+      requests.innerHTML = "";
+      const open = comms.open_requests || [];
+      if (!open.length) {
+        requests.innerHTML = '<p class="hint">Nothing is waiting on an answer.</p>';
+      }
+      open.forEach((msg) => {
+        const row = document.createElement("div");
+        row.className = "trow warning";
+        row.innerHTML =
+          '<span class="m" dir="auto">' + escapeHtml(msg.sender_name || "?") + "</span>" +
+          '<span class="status warning">' + escapeHtml(msg.subject || msg.body || "").slice(0, 90) + "</span>" +
+          '<span style="color:var(--ink-dim)" dir="auto">→ ' + escapeHtml(msg.recipient || "?") + "</span>";
+        requests.appendChild(row);
+      });
+    }
+  }
+
+  function renderReserves() {
+    const container = $("reserves");
+    if (!container) return;
+    const bench = state.reserves || {};
+    const models = bench.models || [];
+    container.innerHTML = "";
+    if (!models.length) {
+      container.innerHTML =
+        '<p class="hint">No models on the bench yet. Add one with its limits and it is quota-tracked immediately — as a reserve it stays idle until the Control Manager calls it up.</p>';
+      return;
+    }
+    models.forEach((row) => {
+      const limits = row.limits || {};
+      const parts = [];
+      const pairs = [
+        ["rpm", "req/min"], ["rpd", "req/day"], ["rpw", "req/wk"],
+        ["tpm", "tok/min"], ["tpd", "tok/day"], ["tpw", "tok/wk"],
+      ];
+      pairs.forEach(([key, label]) => {
+        if (limits[key] !== null && limits[key] !== undefined) parts.push(limits[key] + " " + label);
+      });
+      const head = typeof row.headroom === "number" ? Math.round(row.headroom * 100) + "% headroom" : "headroom unknown";
+      const node = document.createElement("div");
+      node.className = "trow" + (row.reserve ? "" : " ");
+      node.innerHTML =
+        '<span class="m" dir="auto">' + escapeHtml(row.model || "") + "</span>" +
+        '<span style="grid-column: span 3" dir="auto">' + escapeHtml(parts.join(" · ") || "no limits declared") + "</span>" +
+        '<span class="status ' + (row.reserve ? "warning" : "") + '">' + (row.reserve ? "reserve" : "active") + " · " + escapeHtml(head) + "</span>";
+      container.appendChild(node);
+    });
+    const foot = $("reserves-foot");
+    if (foot) {
+      foot.textContent =
+        (bench.reserve_count || 0) + " on the bench · " + (bench.active_count || 0) +
+        " active · a reserve earns nothing until activated, and its limits are enforced from the first call";
+    }
   }
 
   /* Right-to-left interfaces are mirrored, not translated (contract 22.11). The core reports

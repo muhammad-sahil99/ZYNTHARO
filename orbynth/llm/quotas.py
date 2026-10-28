@@ -28,6 +28,7 @@ from ..events import QUOTA_EXHAUSTED, QUOTA_WARNING, EventBus
 
 MINUTE = 60.0
 DAY = 86_400.0
+WEEK = 604_800.0
 
 
 @dataclass(slots=True)
@@ -48,10 +49,14 @@ class ModelQuota:
     rpd: int | None = None
     tpm: int | None = None
     tpd: int | None = None
+    rpw: int | None = None
+    tpw: int | None = None
     requests_minute: deque[float] = field(default_factory=deque)
     requests_day: deque[float] = field(default_factory=deque)
+    requests_week: deque[float] = field(default_factory=deque)
     tokens_minute: deque[tuple[float, int]] = field(default_factory=deque)
     tokens_day: deque[tuple[float, int]] = field(default_factory=deque)
+    tokens_week: deque[tuple[float, int]] = field(default_factory=deque)
     cooldown_until: float = 0.0
     consecutive_errors: int = 0
     total_requests: int = 0
@@ -60,43 +65,59 @@ class ModelQuota:
 
     # -- windows -----------------------------------------------------------------------
     def prune(self, now: float) -> None:
-        for window, span in ((self.requests_minute, MINUTE), (self.requests_day, DAY)):
+        for window, span in (
+            (self.requests_minute, MINUTE),
+            (self.requests_day, DAY),
+            (self.requests_week, WEEK),
+        ):
             while window and now - window[0] > span:
                 window.popleft()
-        for window, span in ((self.tokens_minute, MINUTE), (self.tokens_day, DAY)):
+        for window, span in (
+            (self.tokens_minute, MINUTE),
+            (self.tokens_day, DAY),
+            (self.tokens_week, WEEK),
+        ):
             while window and now - window[0][0] > span:
                 window.popleft()
 
     def _retry_after(self, window: str, now: float, span: float) -> float:
         """Seconds until the named window frees a slot (how long the Steward must wait)."""
-        entries = self.requests_minute if window == "rpm" else self.requests_day
-        token_entries = self.tokens_minute if window == "tpm" else self.tokens_day
+        request_windows = {"rpm": self.requests_minute, "rpd": self.requests_day, "rpw": self.requests_week}
+        token_windows = {"tpm": self.tokens_minute, "tpd": self.tokens_day, "tpw": self.tokens_week}
         if window.startswith("t"):
-            oldest = token_entries[0][0] if token_entries else now
+            entries = token_windows.get(window, self.tokens_minute)
+            oldest = entries[0][0] if entries else now
         else:
-            oldest = entries[0] if entries else now
+            requests = request_windows.get(window, self.requests_minute)
+            oldest = requests[0] if requests else now
         return max(0.0, oldest + span - now)
 
     def usage(self) -> dict[str, int]:
         return {
             "requests_minute": len(self.requests_minute),
             "requests_day": len(self.requests_day),
+            "requests_week": len(self.requests_week),
             "tokens_minute": sum(n for _, n in self.tokens_minute),
             "tokens_day": sum(n for _, n in self.tokens_day),
+            "tokens_week": sum(n for _, n in self.tokens_week),
         }
 
     def to_json(self, now: float) -> dict[str, Any]:
         self.prune(now)
         return {
             "requests_day": list(self.requests_day),
+            "requests_week": list(self.requests_week),
             "tokens_day": [list(t) for t in self.tokens_day],
+            "tokens_week": [list(t) for t in self.tokens_week],
             "total_requests": self.total_requests,
             "total_tokens": self.total_tokens,
         }
 
     def load(self, data: dict[str, Any], now: float) -> None:
         self.requests_day = deque(t for t in data.get("requests_day", []) if now - t <= DAY)
+        self.requests_week = deque(t for t in data.get("requests_week", []) if now - t <= WEEK)
         self.tokens_day = deque((t, int(n)) for t, n in data.get("tokens_day", []) if now - t <= DAY)
+        self.tokens_week = deque((t, int(n)) for t, n in data.get("tokens_week", []) if now - t <= WEEK)
         self.total_requests = int(data.get("total_requests", 0))
         self.total_tokens = int(data.get("total_tokens", 0))
 
@@ -125,6 +146,7 @@ class QuotaManager:
     def register_model(self, spec: ModelSpec) -> ModelQuota:
         quota = self.models.get(spec.qualified) or ModelQuota(qualified=spec.qualified)
         quota.rpm, quota.rpd, quota.tpm, quota.tpd = spec.rpm, spec.rpd, spec.tpm, spec.tpd
+        quota.rpw, quota.tpw = spec.rpw, spec.tpw
         self.models[spec.qualified] = quota
         return quota
 
@@ -150,8 +172,10 @@ class QuotaManager:
         checks = (
             ("rpm", used["requests_minute"], quota.rpm, MINUTE),
             ("rpd", used["requests_day"], quota.rpd, DAY),
+            ("rpw", used["requests_week"], quota.rpw, WEEK),
             ("tpm", used["tokens_minute"] + tokens, quota.tpm, MINUTE),
             ("tpd", used["tokens_day"] + tokens, quota.tpd, DAY),
+            ("tpw", used["tokens_week"] + tokens, quota.tpw, WEEK),
         )
         for name, current, limit, span in checks:
             if limit is not None and current >= limit:
@@ -183,9 +207,11 @@ class QuotaManager:
         tokens = max(0, prompt_tokens) + max(0, completion_tokens)
         quota.requests_minute.append(now)
         quota.requests_day.append(now)
+        quota.requests_week.append(now)
         if tokens:
             quota.tokens_minute.append((now, tokens))
             quota.tokens_day.append((now, tokens))
+            quota.tokens_week.append((now, tokens))
         quota.total_requests += 1
         quota.total_tokens += tokens
         quota.consecutive_errors = 0
@@ -232,8 +258,10 @@ class QuotaManager:
                     "cooldown_s": round(max(0.0, quota.cooldown_until - now), 1),
                     "rpm": {"used": used["requests_minute"], "limit": quota.rpm},
                     "rpd": {"used": used["requests_day"], "limit": quota.rpd},
+                    "rpw": {"used": used["requests_week"], "limit": quota.rpw},
                     "tpm": {"used": used["tokens_minute"], "limit": quota.tpm},
                     "tpd": {"used": used["tokens_day"], "limit": quota.tpd},
+                    "tpw": {"used": used["tokens_week"], "limit": quota.tpw},
                     "errors": quota.consecutive_errors,
                     "last_error": quota.last_error,
                     "total_requests": quota.total_requests,
@@ -248,8 +276,10 @@ class QuotaManager:
         pairs = (
             (used["requests_minute"], quota.rpm),
             (used["requests_day"], quota.rpd),
+            (used["requests_week"], quota.rpw),
             (used["tokens_minute"], quota.tpm),
             (used["tokens_day"], quota.tpd),
+            (used["tokens_week"], quota.tpw),
         )
         if any(limit and current >= limit for current, limit in pairs):
             return "exhausted"
@@ -292,8 +322,10 @@ class QuotaManager:
         for current, limit in (
             (used["requests_minute"], quota.rpm),
             (used["requests_day"], quota.rpd),
+            (used["requests_week"], quota.rpw),
             (used["tokens_minute"], quota.tpm),
             (used["tokens_day"], quota.tpd),
+            (used["tokens_week"], quota.tpw),
         ):
             if limit:
                 ratios.append(min(1.0, current / limit))

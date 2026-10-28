@@ -79,8 +79,10 @@ STEWARD = RoleTemplate(
         "process.list",
         "network.http",
         "model.assign",
+        "model.manage",
         "agent.control",
         "agent.spawn",
+        "agent.messaging",
         "memory.admin",
         "filesystem.read",
     ),
@@ -104,6 +106,7 @@ FOREMAN = RoleTemplate(
     capabilities=(
         "agent.spawn",
         "agent.control",
+        "agent.messaging",
         "filesystem.*",
         "input.*",
         "vision.*",
@@ -130,6 +133,7 @@ OPERATIVE = RoleTemplate(
     capabilities=(
         "input.*",
         "vision.*",
+        "agent.messaging",
         "windows.list",
         "windows.focus",
         "filesystem.read",

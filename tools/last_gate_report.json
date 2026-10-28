@@ -1,11 +1,11 @@
 {
-  "generated_at": 1793180947.8160365,
-  "generated_at_iso": "2026-10-28 09:49:07",
+  "generated_at": 1793182801.8110943,
+  "generated_at_iso": "2026-10-28 10:20:01",
   "machine": {
     "platform": "Linux-6.1.102-x86_64-with-glibc2.39",
     "python": "3.12.3"
   },
-  "milestone": "GA",
+  "milestone": "M0",
   "capabilities": {
     "posix": true,
     "windows": false,
@@ -26,111 +26,17 @@
     "dedicated_machine": false,
     "second_machine": false
   },
-  "verdict": "NOT_READY",
+  "verdict": "READY",
   "counts": {
-    "pass": 25,
+    "pass": 5,
     "fail": 0,
-    "blocked_prerequisite": 12,
+    "blocked_prerequisite": 0,
     "waived": 0,
     "skipped": 0
   },
   "blocking_failures": [],
-  "blocked_prerequisites": [
-    {
-      "id": "office_tier_a",
-      "missing": [
-        "microsoft_office",
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "terminal_interactive",
-      "missing": [
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "second_machine",
-      "missing": [
-        "second_machine"
-      ]
-    },
-    {
-      "id": "input_focus_guard",
-      "missing": [
-        "windows",
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "browser_full_surface",
-      "missing": [
-        "windows",
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "office_roundtrip",
-      "missing": [
-        "windows",
-        "office_license"
-      ]
-    },
-    {
-      "id": "whatsapp_pipeline",
-      "missing": [
-        "whatsapp_account"
-      ]
-    },
-    {
-      "id": "voice_session_live",
-      "missing": [
-        "audio_hardware"
-      ]
-    },
-    {
-      "id": "hud_live_wiring",
-      "missing": [
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "unattended_dedicated_machine",
-      "missing": [
-        "dedicated_machine"
-      ]
-    },
-    {
-      "id": "installer_zero_prereq",
-      "missing": [
-        "second_machine",
-        "code_signing_cert"
-      ]
-    },
-    {
-      "id": "legal_provider_terms",
-      "missing": [
-        "legal_review"
-      ]
-    }
-  ],
-  "manual_outstanding": [
-    "office_tier_a",
-    "terminal_interactive",
-    "sensor_rig",
-    "search_benchmark",
-    "second_machine",
-    "input_focus_guard",
-    "browser_full_surface",
-    "office_roundtrip",
-    "whatsapp_pipeline",
-    "voice_session_live",
-    "hud_live_wiring",
-    "unattended_dedicated_machine",
-    "installer_zero_prereq",
-    "legal_provider_terms",
-    "test_accounts_ready"
-  ],
+  "blocked_prerequisites": [],
+  "manual_outstanding": [],
   "results": [
     {
       "id": "m0_slice",
@@ -140,7 +46,7 @@
       "kind": "ops",
       "status": "pass",
       "detail": "task through gate->driver->evidence->memory->bus; 2 topics; delete correctly denied (capability denied: filesystem.delete)",
-      "duration": 0.13,
+      "duration": 0.12,
       "missing": []
     },
     {
@@ -150,129 +56,8 @@
       "blocking": true,
       "kind": "ops",
       "status": "pass",
-      "detail": "64 file(s) scanned, 0 banned patterns (0 test-harness hit(s) allowed and listed)",
-      "duration": 0.48,
-      "missing": []
-    },
-    {
-      "id": "office_tier_b",
-      "title": "Word, Excel and CSV files written and read back with no Office installed",
-      "milestone": "M2",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "docx write/append verified by reparse, xlsx values and range verified, csv dialect verified, pptx authoring refused honestly (Office not required for any of it)",
-      "duration": 0.01,
-      "missing": []
-    },
-    {
-      "id": "office_tier_a",
-      "title": "End-to-end Word, Excel and Outlook work through installed Office (Tier A)",
-      "milestone": "M4",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "this machine cannot verify this yet; supply: microsoft_office, interactive_desktop",
-      "duration": 0.0,
-      "missing": [
-        "microsoft_office",
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "terminal_engine",
-      "title": "Owned PTY sessions with marker completion, echo verification and L1/L2/L3 classification",
-      "milestone": "M2",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "3 shell(s) detected; bash in pty mode reported completion by markers, echo verified, cwd observed, missing command reported exit 127; L1/L2/L3 classification correct",
-      "duration": 0.1,
-      "missing": []
-    },
-    {
-      "id": "terminal_interactive",
-      "title": "Interactive programs through a session: a REPL, a pager, vim, a y/n installer, Ctrl+C, an SSH login",
-      "milestone": "M4",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "this machine cannot verify this yet; supply: interactive_desktop",
-      "duration": 0.0,
-      "missing": [
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "hardware_sensors",
-      "title": "Sensor readings are plausibility-filtered, alerts fire and clear correctly, thresholds can only be tightened",
-      "milestone": "M2",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "impossible reading flagged not fired, 96 C alerted and cleared, threshold tightening allowed and loosening owner-only, 1 sensor(s) found, 0 reported unavailable, own cost 0.11 ms over 0.0 s",
-      "duration": 0.0,
-      "missing": []
-    },
-    {
-      "id": "sensor_rig",
-      "title": "Physical sensor rig: fans, rails, CPU registers and temperatures read under real load",
-      "milestone": "M4",
-      "blocking": false,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "this machine cannot verify this yet; supply: sensor_rig, privileged_helper",
-      "duration": 0.0,
-      "missing": [
-        "sensor_rig",
-        "privileged_helper"
-      ]
-    },
-    {
-      "id": "local_index",
-      "title": "Local search index: real extraction, incremental scans, verified hits, honest gaps",
-      "milestone": "M2",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "1 document(s) indexed, hit verified on disk, exclusions honoured, change and deletion handled, personal source refused, 1 unextractable file(s) reported; semantic=False, ocr=False, pdf=False",
-      "duration": 0.03,
-      "missing": []
-    },
-    {
-      "id": "search_benchmark",
-      "title": "Retrieval accuracy on a 100,000-file corpus, and hybrid (semantic) retrieval",
-      "milestone": "M3",
-      "blocking": false,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "this machine cannot verify this yet; supply: corpus_100k, embedding_model",
-      "duration": 0.0,
-      "missing": [
-        "corpus_100k",
-        "embedding_model"
-      ]
-    },
-    {
-      "id": "contracts",
-      "title": "Schemas, versions and generated Python/TypeScript/C# bindings agree; live records validate",
-      "milestone": "M1",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "10 contract(s) consistent, generated Python/TypeScript/C# bindings current, 149 live tool row(s) validated, unproven receipt graded UNVERIFIED",
-      "duration": 0.02,
-      "missing": []
-    },
-    {
-      "id": "capability_matrix",
-      "title": "CAPABILITY_MATRIX.md matches the live registry; no capability is claimed without evidence",
-      "milestone": "M1",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "149 declared tool(s): 0 green, 135 unproven, 14 without a driver profile; 0 with recorded runs; document and JSON current",
-      "duration": 0.0,
+      "detail": "67 file(s) scanned, 0 banned patterns (0 test-harness hit(s) allowed and listed)",
+      "duration": 0.49,
       "missing": []
     },
     {
@@ -283,7 +68,7 @@
       "kind": "ops",
       "status": "pass",
       "detail": "exactly-once held (ledger=1 line, replayed=True); reconciled 1 landed / 1 never ran / 1 needs a decision (entry 4); undo plan=1 of 2 action(s) can be reversed; 1 refused as irreversible, 0 have no undo; undo reversed 1 action(s)",
-      "duration": 0.05,
+      "duration": 0.03,
       "missing": []
     },
     {
@@ -293,8 +78,8 @@
       "blocking": true,
       "kind": "command",
       "status": "pass",
-      "detail": "  open(os.path.join(folder, \"f.txt\"), \"w\").write(\"x\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:106: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-l6v_me5v/cfg.ini' mode='r' encoding='UTF-8'>\n  self.assertIn(\"fast\", open(target).read())\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................../workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:45: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-djfvd6t_/doomed.txt' mode='w' encoding='UTF-8'>\n  open(target, \"w\").write(\"bye\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n......./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:784: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/orbynth/actions/whatsapp.py' mode='r' encoding='utf-8'>\n  client = open(os.path.join(self.root(), \"orbynth\", \"actions\", \"whatsapp.py\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n/workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:785: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:794: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../workspace/chats/c2",
-      "duration": 9.47,
+      "detail": "  open(os.path.join(folder, \"f.txt\"), \"w\").write(\"x\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:106: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-xgt74bcx/cfg.ini' mode='r' encoding='UTF-8'>\n  self.assertIn(\"fast\", open(target).read())\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................../workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:45: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/orbynth-work-2v1gu5x6/doomed.txt' mode='w' encoding='UTF-8'>\n  open(target, \"w\").write(\"bye\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n......./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:784: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/orbynth/actions/whatsapp.py' mode='r' encoding='utf-8'>\n  client = open(os.path.join(self.root(), \"orbynth\", \"actions\", \"whatsapp.py\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n/workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:785: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:794: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../workspace/chats/c2",
+      "duration": 9.35,
       "missing": []
     },
     {
@@ -304,309 +89,8 @@
       "blocking": true,
       "kind": "command",
       "status": "pass",
-      "detail": "....../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2653 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n............................................../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2669 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2679 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2682 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..............\n----------------------------------------------------------------------\nRan 71 tests in 3.690s\n\nOK",
-      "duration": 3.83,
-      "missing": []
-    },
-    {
-      "id": "tests_all",
-      "title": "Whole suite on this machine",
-      "milestone": "M1",
-      "blocking": true,
-      "kind": "command",
-      "status": "pass",
-      "detail": "  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2815 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n............./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2817 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2819 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2824 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2836 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 2838 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n....\n----------------------------------------------------------------------\nRan 355 tests in 22.699s\n\nOK",
-      "duration": 22.92,
-      "missing": []
-    },
-    {
-      "id": "doctor_clean",
-      "title": "orbynth doctor reports honestly: every missing driver named, none faked",
-      "milestone": "M1",
-      "blocking": true,
-      "kind": "command",
-      "status": "pass",
-      "detail": "  hardware           9 actions\n  input              8 actions\n  office            17 actions\n  orchestration     16 actions\n  search             5 actions\n  shell             12 actions\n  vision             6 actions\n  whatsapp          30 actions\n  windows            9 actions\n\nPlugins: 0 installed\n\nMemory: {\"agents\": 0, \"episodes\": 0, \"facts\": 0, \"messages\": 0, \"tasks\": 0, \"audit\": 0, \"fts\": true}\n\nOperations:\n  [!!] owner identity: NOT configured \u2014 run `orbynth owner setup`; irreversible\n       actions are refused until the owner exists\n  [ok] supervisor: owning helper processes; jobs die with this app\n       journal: /tmp/tmp.dYNi4gfaTD/jobs.json  jobs now: 0\n  [ok] governor: priority=below_normal, background paused=False\n  [ok] billing: mode=byok\n  [ok] languages: en (OCR packs: eng)\n  [ok] verification: 3 deterministic probe(s); subjective results go to the owner\n\nwarning: Some desktop drivers are not installed here: browser, hud, input, vision, voice",
-      "duration": 0.23,
-      "missing": []
-    },
-    {
-      "id": "second_machine",
-      "title": "M0 slice passes on a second clean machine",
-      "milestone": "M1",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "needs a second clean machine; set ORBYNTH_ACCEPT_SECOND_MACHINE=1 once it exists",
-      "duration": 0.0,
-      "missing": [
-        "second_machine"
-      ]
-    },
-    {
-      "id": "input_focus_guard",
-      "title": "Typing aborts when focus drifts, and never types into nothing",
-      "milestone": "M2",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "needs a real Windows desktop with pynput/pyautogui/uiautomation installed",
-      "duration": 0.0,
-      "missing": [
-        "windows",
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "browser_full_surface",
-      "title": "Browser: tabs, chrome icons, forms, extraction with and without vision",
-      "milestone": "M2",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "needs a desktop browser and Playwright/CDP access",
-      "duration": 0.0,
-      "missing": [
-        "windows",
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "office_roundtrip",
-      "title": "Office: Word, Excel, Access, PowerPoint round trips through COM",
-      "milestone": "M2",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "needs a licensed Microsoft Office install; set ORBYNTH_ACCEPT_OFFICE_LICENSE=1",
-      "duration": 0.0,
-      "missing": [
-        "windows",
-        "office_license"
-      ]
-    },
-    {
-      "id": "whatsapp_pipeline",
-      "title": "WhatsApp: pair once, then send, receive, media, voice note and a real call",
-      "milestone": "M2",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "needs a WhatsApp test number and the Node sidecar built; set ORBYNTH_ACCEPT_WHATSAPP_ACCOUNT=1",
-      "duration": 0.0,
-      "missing": [
-        "whatsapp_account"
-      ]
-    },
-    {
-      "id": "plugin_lifecycle",
-      "title": "Plugin authored, validated, installed, callable, removable",
-      "milestone": "M3",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "authored+installed 'invoice_download' (capability filesystem.read); uninstall removed it",
-      "duration": 0.02,
-      "missing": []
-    },
-    {
-      "id": "supervisor_cleanup",
-      "title": "Supervised jobs die with the supervisor; orphan cleanup runs at startup",
-      "milestone": "M3",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "helper stopped with its supervisor; reconcile revisited 1 journalled job(s)",
-      "duration": 0.76,
-      "missing": []
-    },
-    {
-      "id": "owner_gate",
-      "title": "Owner gate: PIN required for irreversible work, voice alone refused, recovery rotates",
-      "milestone": "M3",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "denied without PIN (pin), allowed with it (pin), voice denied, recovery consumed and rotated (19 chars)",
-      "duration": 0.5,
-      "missing": []
-    },
-    {
-      "id": "catalog_rollback",
-      "title": "Catalog applies only when idle, retires dead model IDs, rolls back",
-      "milestone": "M3",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "blocked while busy (2 action(s) or agent(s) still in fligh), applied -1 model(s), rolled back",
-      "duration": 0.01,
-      "missing": []
-    },
-    {
-      "id": "preflight_unattended",
-      "title": "Locked screen, battery, audio and busy machine produce honest decisions",
-      "milestone": "M3",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "locked->defer, isolated->run_isolated, busy->defer, no-audio->skip, user-request->run_now",
-      "duration": 0.0,
-      "missing": []
-    },
-    {
-      "id": "risk_tiered_verification",
-      "title": "Risk tiers: batched harmless work, never-shortcut irreversible work",
-      "milestone": "M3",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "36 verified immediately, 113 batched, 0 optimistic (rolled back on failure), 23 never shortcut",
-      "duration": 0.01,
-      "missing": []
-    },
-    {
-      "id": "language_rtl",
-      "title": "Urdu/Arabic: direction, detection, digit normalisation, OCR packs",
-      "milestone": "M3",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "ur/ar rtl ok, digits normalised, profile=rtl, ocr=urd+ara",
-      "duration": 0.0,
-      "missing": []
-    },
-    {
-      "id": "billing_modes",
-      "title": "BYOK default; hosted gateway disarmed without legal review and abuse caps",
-      "milestone": "M3",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "unguarded blocked (['gateway_no_legal_review', 'gateway_resale_unconfirmed']), armed allows (within caps), caps enforced, byok issues=0",
-      "duration": 0.0,
-      "missing": []
-    },
-    {
-      "id": "governor_responsive",
-      "title": "Background work yields during games/calls; user-requested work does not",
-      "milestone": "M3",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "critical allowed, background deferred during a game (background work deferred: busy: game), resumed when idle",
-      "duration": 0.0,
-      "missing": []
-    },
-    {
-      "id": "hud_coverage",
-      "title": "Every emitted topic has a place in the interface; no bare-string topics; coverage file current",
-      "milestone": "M4",
-      "blocking": true,
-      "kind": "ops",
-      "status": "pass",
-      "detail": "57 topic(s) all handled (3 via dedicated frames), no bare-string topics, hud/coverage.json current",
-      "duration": 0.32,
-      "missing": []
-    },
-    {
-      "id": "voice_session_live",
-      "title": "Wake word, streaming STT, TTS and barge-in on real hardware",
-      "milestone": "M4",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "needs a microphone and speakers; set ORBYNTH_ACCEPT_AUDIO_HARDWARE=1",
-      "duration": 0.0,
-      "missing": [
-        "audio_hardware"
-      ]
-    },
-    {
-      "id": "hud_live_wiring",
-      "title": "HUD shows live state: particles, wires, agent graph, quota and plugin panels",
-      "milestone": "M4",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "needs a desktop session to view the webview",
-      "duration": 0.0,
-      "missing": [
-        "interactive_desktop"
-      ]
-    },
-    {
-      "id": "unattended_dedicated_machine",
-      "title": "Scheduled GUI task runs unattended on a dedicated machine or VM",
-      "milestone": "M4",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "needs an always-on machine or VM with an auto-login or isolated session; set ORBYNTH_ACCEPT_DEDICATED_MACHINE=1",
-      "duration": 0.0,
-      "missing": [
-        "dedicated_machine"
-      ]
-    },
-    {
-      "id": "installer_zero_prereq",
-      "title": "Installer on a machine with no Python, Node or compiler",
-      "milestone": "GA",
-      "blocking": true,
-      "kind": "manual",
-      "status": "blocked_prerequisite",
-      "detail": "needs the packaged installer plus a Windows/macOS code-signing certificate and clean VMs",
-      "duration": 0.0,
-      "missing": [
-        "second_machine",
-        "code_signing_cert"
-      ]
-    },
-    {
-      "id": "legal_provider_terms",
-      "title": "Provider terms reviewed for the chosen launch mode",
-      "milestone": "GA",
-      "blocking": true,
-      "kind": "owner",
-      "status": "blocked_prerequisite",
-      "detail": "only the owner can do this; set ORBYNTH_ACCEPT_LEGAL_REVIEW=1 once the reference is recorded",
-      "duration": 0.0,
-      "missing": [
-        "legal_review"
-      ]
-    },
-    {
-      "id": "test_accounts_ready",
-      "title": "Test accounts and licences provided (WhatsApp, Microsoft 365, Google)",
-      "milestone": "GA",
-      "blocking": false,
-      "kind": "owner",
-      "status": "blocked_prerequisite",
-      "detail": "only the owner can supply these; set ORBYNTH_ACCEPT_TEST_TENANT=1 once created",
-      "duration": 0.0,
-      "missing": [
-        "test_tenant"
-      ]
-    },
-    {
-      "id": "provider_drift_check",
-      "title": "Nightly provider check finds retired or renamed model IDs",
-      "milestone": "GA",
-      "blocking": false,
-      "kind": "command",
-      "status": "pass",
-      "detail": "provider model drift check at 2026-10-28 09:48\n  unreachable: custom (<urlopen error [Errno -5] No address associated with hostname>)\n  unreachable: gemini (HTTP Error 403: Forbidden)",
-      "duration": 0.31,
-      "missing": []
-    },
-    {
-      "id": "tests_repeat_flake",
-      "title": "Suite repeated twice to catch flaky concurrency tests",
-      "milestone": "GA",
-      "blocking": false,
-      "kind": "command",
-      "status": "pass",
-      "detail": "  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 3120 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n............./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 3122 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 3124 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 3129 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 3133 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 3135 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n....\n----------------------------------------------------------------------\nRan 355 tests in 22.485s\n\nOK",
-      "duration": 45.52,
+      "detail": "....../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 14693 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n............................................../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 14706 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 14716 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 14719 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..............\n----------------------------------------------------------------------\nRan 71 tests in 3.749s\n\nOK",
+      "duration": 3.89,
       "missing": []
     }
   ]

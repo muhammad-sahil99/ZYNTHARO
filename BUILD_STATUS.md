@@ -44,6 +44,9 @@ Read the three markers literally:
 | Hardware monitor S1 (real readings, filter, rules, protection) | partial | `tests/test_sensors.py`, gate `hardware_sensors` |
 | Hardware monitor S2 (privileged fan/rail/MSR helper) | unbuilt | needs a signed helper; see LIMITATIONS |
 | Local search index (FTS5, incremental, verified hits) | partial | `tests/test_index.py`, gate `local_index` |
+| Fleet comms: memos, help requests, answers, file handoff, stored threads | done | `tests/test_comms.py`, `orbynth/agents/comms.py` |
+| Model bench: limits intake (rpm/rpd/rpw, tpm/tpd/tpw), reserve activate/retire | done | `tests/test_reserve.py`, `orbynth/llm/reserve.py` |
+| Weekly quota windows enforced end to end | done | `tests/test_reserve.py`, `orbynth/llm/quotas.py` |
 | Semantic search (embeddings, `sqlite-vec`) | unbuilt | lexical only; see LIMITATIONS |
 | MCP client/server, local REST/WS API, SDKs | unbuilt | spec 15 |
 | Installer for a machine with no coding environment | unbuilt | spec 19; see OWNER_REQUIREMENTS |

@@ -10,7 +10,7 @@ This is the **declared surface** of the product, across every platform the tools
 | `provisional` | implemented and usable here, but not yet proven on a real app | no — every receipt from it is labelled UNVERIFIED |
 | `unavailable` | no driver here, or the wrong platform | no — hidden from agents, shown to the user as "not available on this machine" |
 
-**149 declared tool(s)** in 11 group(s): 0 green, 135 provisional, 14 unavailable on every supported platform. 0 tool(s) have recorded real runs.
+**159 declared tool(s)** in 12 group(s): 0 green, 135 provisional, 24 unavailable on every supported platform. 0 tool(s) have recorded real runs.
 
 ## Declared tools
 
@@ -158,6 +158,12 @@ Hidden from every agent until the driver is present and the platform matches (sp
 
 | tool | group | why | needs |
 | --- | --- | --- | --- |
+| `agent_ask` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `agent_inbox` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `agent_reply` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `agent_requests` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `agent_send_file` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `agent_thread` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
 | `hw_alerts` | hardware | the 'hardware' group has no driver profile, so this cannot be claimed | — |
 | `hw_explain` | hardware | the 'hardware' group has no driver profile, so this cannot be claimed | — |
 | `hw_history` | hardware | the 'hardware' group has no driver profile, so this cannot be claimed | — |
@@ -172,6 +178,10 @@ Hidden from every agent until the driver is present and the platform matches (sp
 | `local_index_status` | search | the 'search' group has no driver profile, so this cannot be claimed | — |
 | `local_index_update` | search | the 'search' group has no driver profile, so this cannot be claimed | — |
 | `local_search` | search | the 'search' group has no driver profile, so this cannot be claimed | — |
+| `model_activate` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `model_add` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `model_reserves` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
+| `model_retire` | fleet | the 'fleet' group has no driver profile, so this cannot be claimed | — |
 
 ## Evidence problems (nothing here counts as proof)
 

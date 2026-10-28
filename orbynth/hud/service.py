@@ -44,6 +44,8 @@ class HudService:
         verifier: Any = None,
         sensors: Any = None,
         index: Any = None,
+        comms: Any = None,
+        reserves: Any = None,
     ):
         self.config = config
         self.bus = bus
@@ -63,6 +65,9 @@ class HudService:
         #: Hardware monitor and local index: shown as measurements, never as decoration.
         self.sensors = sensors
         self.index = index
+        #: Inter-agent comms and the model bench (reserve models with declared limits).
+        self.comms = comms
+        self.reserves = reserves
         #: Recent outcome checks and preflight decisions, newest first.
         self.verdicts: list[dict[str, Any]] = []
         self.preflight_log: list[dict[str, Any]] = []
@@ -138,6 +143,29 @@ class HudService:
             "hardware": self._hardware_snapshot(),
             "capabilities": self._capability_snapshot(),
             "search": self._search_snapshot(),
+            "comms": self._comms_snapshot(),
+            "reserves": self._reserves_snapshot(),
+        }
+
+    def _comms_snapshot(self) -> dict[str, Any]:
+        if self.comms is None:
+            return {"stats": {}, "recent": [], "open_requests": [], "note": "comms not attached"}
+        try:
+            return self.comms.snapshot()
+        except Exception as exc:  # the panel must show the failure, not an empty calm list
+            return {"stats": {}, "recent": [], "open_requests": [], "error": repr(exc)}
+
+    def _reserves_snapshot(self) -> dict[str, Any]:
+        if self.reserves is None:
+            return {"models": [], "note": "reserve pool not attached"}
+        try:
+            rows = self.reserves.rows()
+        except Exception as exc:
+            return {"models": [], "error": repr(exc)}
+        return {
+            "models": rows,
+            "reserve_count": sum(1 for r in rows if r.get("reserve")),
+            "active_count": sum(1 for r in rows if not r.get("reserve")),
         }
 
     def _security_snapshot(self) -> dict[str, Any]:
