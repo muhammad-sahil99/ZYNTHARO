@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from ..events import (
+    VOICE_LANGUAGE,
     VOICE_LISTENING,
     VOICE_SPEAKING,
     VOICE_TRANSCRIPT,
@@ -164,6 +165,36 @@ class VoiceSession:
         return {"push_to_talk": down, "listening": self.state.listening}
 
     # ----------------------------------------------------------------------------------
+    # Transcribing (the WhatsApp call bridge hands raw call frames in here)
+    # ----------------------------------------------------------------------------------
+    def transcribe_pcm(self, pcm: bytes, rate: int = 16_000) -> str:
+        """Turn captured 16-bit mono PCM into words.
+
+        The call bridge captures the live call as raw frames while the STT engine wants a file,
+        so the frames are wrapped in a WAV header. With no STT installed this returns an empty
+        string instead of inventing a transcript.
+        """
+        if not pcm or self._stt is None:
+            return ""
+        import tempfile
+        import wave
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "call.wav"
+            try:
+                with wave.open(str(path), "wb") as wav:
+                    wav.setnchannels(1)
+                    wav.setsampwidth(2)
+                    wav.setframerate(rate)
+                    wav.writeframes(pcm)
+                segments, _info = self._stt.transcribe(str(path), beam_size=1, vad_filter=True)
+                return " ".join(segment.text.strip() for segment in segments).strip()
+            except Exception as exc:  # pragma: no cover - depends on the local model
+                self.state.errors.append(f"call transcription failed: {exc}")
+                return ""
+
+    # ----------------------------------------------------------------------------------
     # Speaking
     # ----------------------------------------------------------------------------------
     def say(self, text: str, block: bool = False) -> dict[str, Any]:
@@ -208,7 +239,14 @@ class VoiceSession:
 
         import edge_tts  # type: ignore
 
-        voice = getattr(self.config, "tts_voice", "en-US-AriaNeural")
+        from ..ops.languages import tts_voice
+
+        # Speak in the configured language: replying to an Urdu question in an English voice
+        # is the kind of detail that makes a voice assistant unusable in half the world.
+        configured_voice = getattr(self.config, "tts_voice", "") or "en-US-AriaNeural"
+        default_voice = "en-US-AriaNeural"
+        language = getattr(self.config, "language", "en")
+        voice = configured_voice if configured_voice != default_voice or language == "en" else tts_voice(language, configured_voice)
         output = "/tmp/orbynth-tts.mp3"
         asyncio.run(edge_tts.Communicate(text, voice).save(output))
         if self._playback_stop.is_set():
@@ -278,9 +316,28 @@ class VoiceSession:
     def _transcribe(self, audio: bytes) -> str:  # pragma: no cover - needs the STT model
         import numpy as np  # type: ignore
 
+        from ..ops.languages import detect as detect_language
+        from ..ops.languages import stt_language
+
         samples = np.frombuffer(audio, dtype=np.int16).astype("float32") / 32768.0
-        segments, _info = self._stt.transcribe(samples, language="en", vad_filter=True)
-        return " ".join(segment.text.strip() for segment in segments).strip()
+        # The configured language, not a hard-coded "en": with "en" an Urdu or Arabic
+        # utterance transcribes to nonsense, and the agent then acts on the nonsense.
+        configured = getattr(self.config, "language", "en")
+        segments, _info = self._stt.transcribe(samples, language=stt_language(configured), vad_filter=True)
+        text = " ".join(segment.text.strip() for segment in segments).strip()
+        # A user may switch language mid-session; report what was actually heard, and remember
+        # it so TTS, OCR hints and the HUD follow the conversation instead of fighting it.
+        heard = detect_language(text)
+        if text and heard != configured:
+            self.bus.emit(
+                VOICE_LANGUAGE,
+                source="voice",
+                severity="notice",
+                detected=heard,
+                configured=configured,
+                text=text[:120],
+            )
+        return text
 
     # ----------------------------------------------------------------------------------
     # Background loops

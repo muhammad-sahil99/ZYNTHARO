@@ -382,7 +382,14 @@ class ProviderAdapter:
         out.provider = self.provider.name
         return out
 
-    def stream_call(self, request: LLMRequest) -> Iterator[str]:
+    def stream_call(self, request: LLMRequest, usage_out: dict[str, Any] | None = None) -> Iterator[str]:
+        """Stream text, and report usage through ``usage_out`` when the vendor sends it.
+
+        Every wire protocol here already parses a usage block into ``state``; it was simply
+        thrown away. The consequence was that a streamed conversation (the live voice path)
+        consumed tokens that no quota, budget or billing record ever saw, so the Steward could
+        believe there was headroom that had already been spent.
+        """
         request = request
         url = self.url(request.model, True, self.api_key)
         body = json.dumps(self.payload(request, True)).encode("utf-8")
@@ -391,27 +398,31 @@ class ProviderAdapter:
             chunks = list(lines)
             raise classify_status(status, b"".join(chunks).decode("utf-8", "replace"), self.provider.name, request.model)
         state: dict[str, Any] = {"buffer": b""}
-        for raw in lines:
-            if isinstance(raw, str):
-                raw = raw.encode("utf-8")
-            state["buffer"] += raw
-            while b"\n" in state["buffer"]:
-                line, state["buffer"] = state["buffer"].split(b"\n", 1)
-                stripped = line.strip()
-                if not stripped.startswith(b"data:"):
-                    continue
-                chunk = stripped[5:].strip()
-                if chunk in (b"", b"[DONE]"):
-                    if chunk == b"[DONE]":
-                        return
-                    continue
-                try:
-                    event = json.loads(chunk.decode("utf-8"))
-                except json.JSONDecodeError:
-                    continue
-                text = self.parse_stream_event(event, state)
-                if text:
-                    yield text
+        try:
+            for raw in lines:
+                if isinstance(raw, str):
+                    raw = raw.encode("utf-8")
+                state["buffer"] += raw
+                while b"\n" in state["buffer"]:
+                    line, state["buffer"] = state["buffer"].split(b"\n", 1)
+                    stripped = line.strip()
+                    if not stripped.startswith(b"data:"):
+                        continue
+                    chunk = stripped[5:].strip()
+                    if chunk in (b"", b"[DONE]"):
+                        if chunk == b"[DONE]":
+                            return
+                        continue
+                    try:
+                        event = json.loads(chunk.decode("utf-8"))
+                    except json.JSONDecodeError:
+                        continue
+                    text = self.parse_stream_event(event, state)
+                    if text:
+                        yield text
+        finally:
+            if usage_out is not None and state.get("usage"):
+                usage_out.update(state["usage"])
 
 
 class OpenAICompatibleAdapter(ProviderAdapter):
@@ -715,8 +726,17 @@ class EchoAdapter(ProviderAdapter):
             finish_reason="tool_calls" if tool_calls else "stop",
         )
 
-    def stream_call(self, request: LLMRequest) -> Iterator[str]:
-        for word in self.call(request).text.split(" "):
+    def stream_call(self, request: LLMRequest, usage_out: dict[str, Any] | None = None) -> Iterator[str]:
+        response = self.call(request)
+        if usage_out is not None:
+            usage_out.update(
+                {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
+            )
+        for word in response.text.split(" "):
             yield word + " "
 
     def parse(self, data: dict[str, Any], model: str) -> LLMResponse:  # pragma: no cover - not used
@@ -836,8 +856,14 @@ class ProviderRegistry:
         response.model = response.model or model_id
         return response
 
-    def stream(self, qualified: str, request: LLMRequest, agent_id: str = "") -> Iterator[str]:
+    def stream(
+        self,
+        qualified: str,
+        request: LLMRequest,
+        agent_id: str = "",
+        usage_out: dict[str, Any] | None = None,
+    ) -> Iterator[str]:
         adapter, model_id = self.for_model(qualified)
         request.model = model_id
         request.stream = True
-        yield from adapter.stream_call(request)
+        yield from adapter.stream_call(request, usage_out)

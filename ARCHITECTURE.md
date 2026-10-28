@@ -60,6 +60,7 @@ implementation pending.
 | Signed model catalog, apply gate, rollback, drift check | `orbynth/ops/catalog.py` | DONE (Ed25519 needs `cryptography`; HMAC fallback labelled) |
 | Responsiveness governor (priority, pause) | `orbynth/ops/governor.py` | DONE (busy detection is driver-dependent and honest about it) |
 | Urdu/Arabic/RTL language layer | `orbynth/ops/languages.py` | DONE |
+| One definition of what is irreversible | `orbynth/ops/risk.py` | DONE |
 | Capacity plan + wave execution | `orbynth/agents/planning.py` | DONE |
 | Master release gate + acceptance manifest | `tools/release_gate.py`, `tools/acceptance.json` | DONE |
 
@@ -153,6 +154,84 @@ state, not decoration:
 | `plugin.installed` | a new orbital satellite docks onto the core |
 | `memory.write` | spark emitted from the archivist satellite into the core |
 | `hud.scene` | 3D scene payload opens in the viewer window |
+| `supervisor.*` / `job.*` | process rows appear, restart counters climb, orphans flash |
+| `task.preflight` / `task.verified` / `task.disputed` | machine panel shows the decision; verdict list gains a met/not-met row |
+| `owner.*` / `update.*` / `governor.*` / `billing.blocked` | security panel, model-catalogue panel, machine panel update in place |
+
+### 6.1 The instrument: what the interface is made of
+
+The interface is an instrument plate, not a dashboard with a globe behind it. Four bodies
+share one perspective camera in `hud/particle-core.js` (two draw calls per frame, all motion
+in the vertex shader, so the CPU cost does not scale with particle count):
+
+| Body | Geometry | Behaviour |
+|---|---|---|
+| Globe | banded shell, inner dust volume, evenly spread sparks, deterministic rim lattice | per-dot axial rate, so the body shears instead of spinning rigidly |
+| Rings | five ringlets plus cross-band tendrils | differential rotation: inner bands race, outer bands trail |
+| Orbits | four thin arcs with their plane baked into the points | crossing planes, dragged against the ring rotation |
+| Jets | two sparse cones on the polar axis | faint, cool, always present |
+
+The projection is real: `f = uFocal / (uCamZ - z)`, aspect-corrected, with the far hemisphere
+dimmed by depth. An earlier version scaled `x`/`y` by a hand-rolled "perspective" factor, which
+produced a flat cloud, and a guard now fails the build if that regresses.
+
+`hud/chrome.js` draws the housing around that core — tick graduations, dashed datum rings,
+segmented arcs, calibration rails with hash marks, target brackets, the telemetry column — and
+renders the waveform strips and gauge dials. Two rules make it trustworthy:
+
+1. **Telemetry is only ever real values**, handed in by the controller from the same state the
+   panels render. There is no decorative number generator anywhere in the interface.
+2. **Signal strips have four planes** — speech energy, tool traffic, memory writes and
+   helper-process lanes — and each is raised only by an event that happened, then decays. The
+   strip label names the plane that is live.
+
+The cage is measured from the viewport using the same constants as the core, and its telemetry
+column is clamped into the gap between the side panels; where there is no room it draws nothing
+rather than over the panels.
+
+Two further layers make the plate a console rather than a dashboard with a globe in it.
+`hud/grid.js` draws the mesh the instrument is mounted in: converging structural rules above and
+below the horizon, edge rulers that measure the real viewport, datum plates carrying viewport
+size, pixel ratio, frame rate and particle budget, corner reticles, and six labelled columns of
+scrolling hexadecimal buses down the margins of the core field. `hud/widgets.js` mounts the
+seventeen instruments the document declares with `data-widget` attributes: radar (its blips are
+the real roster, placed by ring and fading as the sweep passes), hexagon lattice (lit cells are
+real ranks and teams, with a pulse travelling the lit edges), sparklines and bar clusters sampled
+from real counters, a cell matrix of memory blocks, per-channel ladder meters and ruled scales
+with needles. Channel lanes are capability shares per registered action group, so a lane is lit
+because the system really registered that work. A widget with no data draws its frame and says
+so — the same rule as the telemetry column.
+
+`hud/effects.js` is the director that ties those layers together. It watches the same events and
+counters as everything else, resolves one *situation* — twenty-two of them, from `idle` and
+`offline` through `thinking`, `delegating`, `acting`, `browsing`, `blocked`, `confirming`,
+`pressure`, `failover`, `error`, `disputed`, `extending`, `reconciling`, `updating` and
+`yielding`, plus the four voice states — and publishes one blended recipe that every renderer
+reads: colour palette, globe rotation rate, sustained energy floor, ripple amplitude, backdrop
+intensity / scroll speed / alarm tint / interference, cage brightness / warmth / alert hazard ring
+/ arc speed, and instrument jitter and sweep speed. Ten transient effects stack on top and decay
+on their own (flare, shock, ember, glitch, settle, sweep, stamp, dock, tear, breathe); the one-shot
+kinds are announced to the controller, which maps them onto the core's own machinery — a shockwave
+is a ring pulse, a strike is a collapse, a docking plugin is an energy pulse. A situation change
+blends over 700 ms rather than snapping. Every topic the core emits is routed to a situation, and
+that mapping lives beside the registry, so a topic cannot point at a state that does not exist;
+`tools/hud_visual_check.js` drives the director on a fake clock and fails the build if one does,
+if a situation carries no more energy than idle, or if a failed action stops tearing the plate.
+
+Because a blank screen hides every one of those failures, `tools/hud_visual_check.js` executes
+the real renderers against a stubbed WebGL context and a recording 2D context. It asserts that
+every attribute and uniform the JavaScript looks up is declared in its shader, that every
+attribute is bound from a buffer, that the projection is three-dimensional, that no band or kind
+of the geometry is empty, that both bodies are drawn every frame including the glow pass, that
+the cage and dials render without throwing at wide and narrow sizes, and that every element id
+`hud/app.js` reaches for exists in `index.html`. Its canvas stubs are parsed out of
+`index.html` itself, so an instrument mounted in the document with no renderer behind it fails
+the check instead of drawing an empty box. `tests/test_hud.py` runs it as part of the suite.
+
+No event may exist without an effect: `hud/coverage.json` is generated from
+`orbynth/events.py` by `tools/hud_coverage.py`, and `tests/test_hud.py` asserts it is complete
+and current. A topic written as a bare string also fails that check, so every topic is a
+declared constant.
 
 ## 7. Build order for a parallel agent team
 
@@ -265,6 +344,10 @@ machine. Those checks are blocking; until the prerequisite exists they are repor
 `blocked_prerequisite`, which is honest and visible rather than absent. Flakiness policy: the
 suite is repeated as a non-blocking check, and the concurrency tests (supervisor restarts,
 parallel subagents on one SQLite store) are deterministic by construction rather than retried.
+A test may not read the host it happens to run on: every probe is travel-injectable, and a
+test that needs a machine state passes it in. This is not tidiness — the responsiveness policy
+used to read the real load average inside `evaluate()`, so a blocking gate passed or failed
+according to what else the CI box was doing at the time.
 
 ### 22.9 Change over time
 
@@ -289,6 +372,41 @@ voices and STT hints. On responsiveness (`ops/governor.py`): ORBYNTH runs below 
 priority (`nice` / `BELOW_NORMAL_PRIORITY_CLASS`), and games, video calls and presentations
 pause background and maintenance work and defer desktop work — while work the user asked for
 right now is never paused, because it is their machine and their request.
+
+### 22.12 Logic corrections (review pass)
+
+A review of the seams — where two subsystems meet — found the following, all now fixed in
+code and pinned by a test. They are listed because each one was a *logical* fault, not a
+missing feature: the code ran, and the answer it produced was wrong.
+
+| Fault | What was wrong | Now |
+|---|---|---|
+| Supervisor adoption | `reconcile()` cleared `jobs` *after* adopting, so an adopted job was forgotten and the report always claimed nothing was adopted | adopted jobs survive and are watched (`test_adopted_jobs_survive_reconciliation`) |
+| Orphan workspaces | The cleanup guard only covered jobs it had just terminated, skipping the process-is-gone case the docstring promised | scratch directories from interrupted runs are cleaned (`test_interrupted_workspaces_are_cleaned_at_startup`) |
+| Recovery code | Rotation lived in the CLI command, so any other caller (HUD, scheduled task, library) left the used code valid forever | `verify_recovery` consumes and rotates it itself (`test_using_the_recovery_code_rotates_it_without_asking_the_caller`) |
+| Audio probe | Windows audio was detected with the screen-width metric, so a machine with no sound hardware looked ready for voice work | real playback + capture device query; unknowable is reported as no (`test_windows_audio_probe_is_not_a_display_probe`) |
+| Persian detection | `پ چ ژ گ ک ی` are shared by Urdu and Persian, and Urdu was tested first, so Persian could never win | the sets are split: Urdu needs an Urdu-only letter, Persian needs Persian evidence and no Arabic-only letter (`test_persian_is_not_swallowed_by_urdu`) |
+| "Done" with nothing to check | An empty contract fell through to `met`, certifying a task with no criteria | empty criteria → `uncertain`, and the summary says no criteria were written (`test_a_contract_with_nothing_to_check_is_never_met`) |
+| "0 side effects" | A contract with no declared capabilities reported zero side effects, which reads like a clean bill of health | reported as *not judged*, with the reason (`test_side_effects_line_is_honest_when_no_capabilities_were_declared`) |
+| Primary entry point | `orbynth run` handed the objective to the Sovereign with no contract at all, bypassing outcome verification entirely | a contract is written from the request; `--expect PATH` states promised outputs (`test_the_live_task_path_checks_the_outcome_against_a_written_contract`) |
+| Streamed usage | Streamed answers (the voice path) charged no quota, budget or billing, so the Steward saw headroom that was already spent | vendor usage is threaded out of every adapter and charged; an empty stream raises instead of returning silence (`test_streamed_answers_are_charged_to_quota`) |
+| Helper ownership | `Launched.terminate()` used a module-level global, so a second supervisor meant stopping the wrong process book | the launched process records its own supervisor (`test_a_launched_helper_remembers_the_supervisor_that_owns_it`) |
+| Invisible subsystems | `hud/app.js` claimed a generated coverage file and a test that did not exist; topics were also emitted as bare strings | `tools/hud_coverage.py`, `hud/coverage.json`, every topic a declared constant, asserted in `tests/test_hud.py` and blocking at M4 |
+| HUD state drift | `agent.status`, `task.done` and `model.call` had no effect, so the roster could show a stale status | each has a specific effect in the interface |
+| Three definitions of "irreversible" | `ops/owner.py`, `ops/verification.py` and the action registry each carried their own list, and they disagreed: `model.assign` and `memory.admin` demanded a PIN but were tiered as routine work | one canonical list in `ops/risk.py`, imported by all three (`test_one_definition_of_irreversible_governs_every_consumer`) |
+| Self-cancelling approval gate | `Agent.act` pre-approved every capability in `safety.confirm_capabilities` for rank ≤ 1 — the same list that *requires* confirmation — so the Sovereign and Steward never emitted an `action.confirm` card for a single destructive action | pre-approval comes only from an explicit approval (`registry.approve`); the panel now applies to every rank (`test_a_sovereign_still_asks_before_a_destructive_action`) |
+| Flaky responsiveness policy | `evaluate()` read the host's load average directly, so injecting a detector did not make the policy deterministic: on a busy machine background work paused itself and the release gate failed for reasons unrelated to the change | the load reading is injectable (`load_provider`) and tests pin it to zero (`test_a_loaded_machine_pauses_background_work`) |
+| Relative priority | `apply_priority` used `os.nice()`, which is cumulative: two calls reached nice 20 and "below normal" was silently "as low as possible", with no way back | absolute `os.setpriority` / `SetPriorityClass`, idempotent and reversible (`test_priority_is_absolute_not_cumulative`) |
+| Dead preflight branches | `MachineState` declared `idle_seconds`, `network` and `busy_reason` and the probe filled none of them, so `user_active` was always true, `user_present` work never deferred, and "machine busy" was reachable only from a test | idle, network and route probes; the governor supplies the busy reason; a headless process counts as nobody present (`test_preflight_defers_desktop_work_when_the_governor_says_busy`) |
+| Isolation that could never happen | `run_isolated` required `isolation_available`, which nothing ever set | `ops.isolated_session_available` in config, passed to the preflight, and the decision says which path it took (`test_isolation_is_only_offered_when_it_is_configured`) |
+| Journal with secrets | The supervisor journal persisted each helper's full environment, which can hold a provider API key, into a plain-text file | only variable *names* are recorded (`test_supervisor_journal_never_records_helper_environment_values`) |
+| Windows busy detection | The Windows branch enumerated every pid and discarded the list without reading a single name, so known games and calls could never match on the main target platform | image names are read with `QueryFullProcessImageNameW` (unverified here: no Windows machine in this container) |
+| Lingering verdict status | The verifier set `report.status = "disputed"`, a value absent from the documented vocabulary and from the interface's status styling | `disputed` is part of the vocabulary and gets its own rail colour and pulse (`test_the_interface_applies_the_direction_and_styles_a_disputed_report`) |
+| Right-to-left chrome | The language layer knew the direction and the interface never asked, so Urdu and Arabic users got left-anchored chrome | the snapshot carries `language_dir`, the HUD sets `dir`, and side-anchored styles are logical (`border-inline-start`) (`test_the_interface_is_told_which_way_the_language_reads`) |
+| A console that was not an instrument | The core projected with a hand-rolled factor (`vec4(p.xy * persp, 0, 1)`) and had no depth at all: a flat cloud behind an ordinary dashboard, with no ring system, no cage, no signal strips and no dials | real perspective camera with depth-shaded far hemisphere, a ring/tendril/orbit/jet assembly, the instrument cage, waveform strips and gauges — all of it executed headlessly in CI (`node tools/hud_visual_check.js`, run by `tests/test_hud.py`) |
+| Silently dead geometry | Sparks were assigned at random (5%) and the rim lattice required a radius the generator could not produce, so a whole band of the globe was dead code that never drew a single point | sparks are spread deterministically (one in seventeen) and the rim lattice is assigned to the outermost points by rank, so no band can come out empty — asserted in the visual harness (`globe band N is empty` fails the suite) |
+| A handler for an event that cannot happen | The new signal-routing map listed `browser.action`, which is not a declared topic, so the interface promised an effect for an event the core can never emit | the coverage guard caught it before the suite ran; only declared topics are routed, and `hud/coverage.json` is unchanged |
+| A hidden window that kept drawing | A scene renderer started from the viewer's own loop would have kept rendering after the window closed | the renderer is driven by the main animation loop through `state.sceneFrame` and cleared in `closeScene()`, so closing the window stops the work immediately (`test_a_3d_explanation_window_stops_rendering_when_it_closes`) |
 
 ### What only the owner can provide or decide
 

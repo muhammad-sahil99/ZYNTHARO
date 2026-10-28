@@ -415,46 +415,136 @@ def windows_launch(
     expect_window: str = "",
     timeout: float = 20.0,
 ) -> Any:
+    # Snapshot first: a window with the same title may already be open (Explorer, an existing
+    # document). Accepting it would mean the agent "waits for" a window it never launched and then
+    # works in the wrong document.
+    existing = {
+        (int(w.get("handle") or 0), str(w.get("title", "")))
+        for w in list_windows()
+    }
     result = launch_app(target, args)
     if expect_window:
         deadline = time.time() + timeout
         while time.time() < deadline:
-            if any(expect_window.lower() in str(w.get("title", "")).lower() for w in list_windows()):
-                result["window_found"] = expect_window
+            fresh = [
+                w for w in list_windows()
+                if expect_window.lower() in str(w.get("title", "")).lower()
+                and (int(w.get("handle") or 0), str(w.get("title", ""))) not in existing
+            ]
+            if fresh:
+                result["window_found"] = str(fresh[0].get("title", ""))
+                result["window_pid"] = int(fresh[0].get("pid") or 0)
                 return result
             time.sleep(0.4)
+        already = [
+            w.get("title") for w in list_windows()
+            if expect_window.lower() in str(w.get("title", "")).lower()
+        ][:6]
         raise ActionFailed(
-            f"launched {target!r} but no window matching {expect_window!r} appeared within {timeout}s",
-            {"argv": result["argv"], "titles": [w.get("title") for w in list_windows()][:30]},
+            f"launched {target!r} but no new window matching {expect_window!r} appeared within {timeout}s",
+            {
+                "argv": result["argv"],
+                "preexisting_matching_windows": already,
+                "titles": [w.get("title") for w in list_windows()][:30],
+                "hint": "a matching window was already open; focus it with windows_focus rather than launching a second copy" if already else "the app may have failed to start; check its own error window",
+            },
         )
     return result
 
 
+def _request_close(window: dict[str, Any]) -> str:
+    """Ask a window to close the way the title-bar X does. Returns the mechanism used."""
+    title = str(window.get("title", ""))
+    handle = window.get("handle")
+    if IS_WINDOWS and handle:  # pragma: no cover
+        import ctypes
+
+        ctypes.windll.user32.PostMessageW(int(handle), 0x0010, 0, 0)  # WM_CLOSE
+        return "WM_CLOSE"
+    if IS_MAC:  # pragma: no cover
+        subprocess.run(["osascript", "-e", f'tell application "{window.get("app", title)}" to close window "{title}"'], capture_output=True)
+        return "applescript"
+    if _has("wmctrl") and handle:
+        subprocess.run(["wmctrl", "-ic", str(handle)], capture_output=True)
+        return "wmctrl"
+    if _has("xdotool") and handle:
+        subprocess.run(["xdotool", "windowclose", str(handle)], capture_output=True)
+        return "xdotool"
+    raise ActionFailed(
+        "this window cannot be asked to close on this desktop (no WM control tool)",
+        {"title": title, "hint": "install wmctrl or xdotool, or close the app through its own menu"},
+    )
+
+
+def _still_open(window: dict[str, Any], title: str) -> bool:
+    handle = int(window.get("handle") or 0)
+    for candidate in list_windows():
+        if handle and int(candidate.get("handle") or 0) == handle:
+            return True
+        if not handle and str(candidate.get("title", "")) == title:
+            return True
+    return False
+
+
 @action(
     name="windows_close",
-    description="Close a window gracefully by title substring (sends WM_CLOSE / equivalent).",
+    description=(
+        "Close a window gracefully, then *verify it actually closed*. A window that stays open "
+        "means something is blocking it — almost always a 'save changes?' prompt — and that is "
+        "reported as a blocker with the dialog named, instead of a false 'closed'. Pass force=true "
+        "only to kill the owning process when a prompt is unattended and the work is disposable."
+    ),
     capability="windows.focus",
     group="windows",
-    parameters={"type": "object", "properties": {"title_contains": {"type": "string"}}, "required": ["title_contains"]},
+    parameters={
+        "type": "object",
+        "properties": {
+            "title_contains": {"type": "string"},
+            "timeout": {"type": "number"},
+            "force": {"type": "boolean", "description": "Terminate the process if it refuses to close."},
+        },
+        "required": ["title_contains"],
+    },
 )
-def windows_close(ctx: ActionContext, title_contains: str) -> Any:
-    for window in list_windows():
-        title = str(window.get("title", ""))
-        if title_contains.lower() not in title.lower():
-            continue
-        handle = window.get("handle")
-        if IS_WINDOWS and handle:  # pragma: no cover
-            import ctypes
-
-            ctypes.windll.user32.PostMessageW(int(handle), 0x0010, 0, 0)  # WM_CLOSE
-            return {"closed": title}
-        if IS_MAC:  # pragma: no cover
-            subprocess.run(["osascript", "-e", f'tell application "{window.get("app", title)}" to close window "{title}"'], capture_output=True)
-            return {"closed": title}
-        if _has("wmctrl") and handle:
-            subprocess.run(["wmctrl", "-ic", str(handle)], capture_output=True)
-            return {"closed": title}
-    raise ActionFailed(f"no window matched {title_contains!r}", {"titles": [w.get("title") for w in list_windows()][:30]})
+def windows_close(ctx: ActionContext, title_contains: str, timeout: float = 8.0, force: bool = False) -> Any:
+    matches = [
+        window for window in list_windows()
+        if title_contains.lower() in str(window.get("title", "")).lower()
+    ]
+    if not matches:
+        raise ActionFailed(f"no window matched {title_contains!r}", {"titles": [w.get("title") for w in list_windows()][:30]})
+    window = matches[0]
+    title = str(window.get("title", ""))
+    mechanism = _request_close(window)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _still_open(window, title):
+            return {"closed": title, "verified": True, "via": mechanism, "waited_s": round(timeout, 2)}
+        time.sleep(0.2)
+    # Still open: name what is holding it, rather than claiming success.
+    pid = int(window.get("pid") or 0)
+    blocking = [
+        w.get("title") for w in list_windows()
+        if pid and int(w.get("pid") or 0) == pid and str(w.get("title", "")) != title
+    ][:6]
+    if force and pid:  # pragma: no cover - platform specific
+        try:
+            if IS_WINDOWS:
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+            else:
+                os.kill(pid, 9)
+        except Exception as exc:
+            raise ActionFailed(f"window {title!r} did not close and the process could not be killed: {exc}", {"blocking_dialogs": blocking}) from exc
+        time.sleep(0.4)
+        return {"closed": title, "verified": not _still_open(window, title), "via": "terminated", "blocking_dialogs": blocking}
+    raise ActionFailed(
+        f"window {title!r} is still open after {timeout}s — something is blocking the close",
+        {
+            "blocking_dialogs": blocking,
+            "hint": "a save-changes or file-in-use prompt is likely; answer it (windows_uia_read) or pass force=true to discard",
+            "mechanism": mechanism,
+        },
+    )
 
 
 @action(
@@ -609,9 +699,36 @@ def windows_set_value(
     },
 )
 def windows_click_element(
-    ctx: ActionContext, title_contains: str = "", name: str = "", role: str = "", nth: int = 1
+    ctx: ActionContext, title_contains: str = "", name: str = "", role: str = "", nth: int = 1, verify: bool = True
 ) -> Any:
-    handle = _first_handle(title_contains) if title_contains else 0
+    """Click a control: bring the window forward, re-resolve it, guard the focus, then verify.
+
+    Three defects made this dangerous before. It clicked coordinates from a tree it read earlier,
+    so a window that moved (or another app that took focus) received the click. It never checked
+    the window was foreground, so the click could land on whatever was in front. And it could not
+    say whether anything happened. Now the window is activated and verified, the element is
+    re-resolved immediately before the click, the focus guard aborts if focus drifts in between,
+    and the element's state is re-read afterwards.
+    """
+    window = next(
+        (w for w in list_windows() if title_contains.lower() in str(w.get("title", "")).lower()),
+        None,
+    ) if title_contains else None
+    if title_contains and window is None:
+        raise ActionFailed(f"no window matched {title_contains!r}", {"titles": [w.get("title") for w in list_windows()][:30]})
+    if window is not None:
+        if not _activate(window):
+            raise ActionFailed(f"cannot bring {window.get('title')!r} to the foreground", {"hint": "it may be minimised or owned by another user session"})
+        time.sleep(0.2)
+        foreground = next((w for w in list_windows() if w.get("foreground")), None)
+        if foreground is None or int(foreground.get("handle") or 0) != int(window.get("handle") or 0):
+            raise ActionFailed(
+                f"refusing to click: {window.get('title')!r} is not in the foreground",
+                {"foreground_now": (foreground or {}).get("title")},
+            )
+    from .input_control import FocusGuard, backend, ensure_dpi_awareness
+
+    handle = int((window or {}).get("handle") or 0)
     nodes = read_ui_tree(handle, max_depth=6, max_nodes=800)
     matches = [
         node
@@ -628,10 +745,32 @@ def windows_click_element(
     chosen = matches[min(max(1, nth) - 1, len(matches) - 1)]
     left, top, right, bottom = chosen["bounds"]
     point = ((left + right) // 2, (top + bottom) // 2)
-    from .input_control import backend
-
+    guard = FocusGuard.capture(title_contains or str((window or {}).get("title", ""))) if title_contains else None
+    if guard is not None:
+        guard.verify("before click")
     backend().click(point[0], point[1])
-    return {"clicked": chosen.get("name"), "role": chosen.get("role"), "at": point, "bounds": chosen["bounds"]}
+    if guard is not None:
+        guard.verify("after click")
+    state_change: Any = None
+    if verify:
+        time.sleep(0.25)
+        after = [
+            node for node in read_ui_tree(handle, max_depth=6, max_nodes=800)
+            if str(node.get("name", "")) == str(chosen.get("name", ""))
+            and (not role or role.lower() in str(node.get("role", "")).lower())
+        ]
+        before_key = {k: chosen.get(k) for k in ("value", "focused", "expanded", "selected", "enabled")}
+        after_key = {k: after[0].get(k) for k in ("value", "focused", "expanded", "selected", "enabled")} if after else None
+        state_change = {"before": before_key, "after": after_key, "changed": bool(after_key and after_key != before_key)}
+    return {
+        "clicked": chosen.get("name"),
+        "role": chosen.get("role"),
+        "at": point,
+        "bounds": chosen["bounds"],
+        "focus_clean": guard.clean if guard is not None else None,
+        "element_state": state_change,
+        "dpi": ensure_dpi_awareness(),
+    }
 
 
 @action(
@@ -648,14 +787,38 @@ def windows_click_element(
         "required": ["title_contains", "state"],
     },
 )
-def windows_state(ctx: ActionContext, title_contains: str, state: str) -> Any:
-    handle = _first_handle(title_contains)
+def window_state(window: dict[str, Any]) -> str:
+    """Ask the OS what state a window is really in: minimise | maximise | normal | hidden | unknown."""
+    handle = int(window.get("handle") or 0)
+    if IS_WINDOWS and handle:  # pragma: no cover
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        if not user32.IsWindow(handle):
+            return "closed"
+        if user32.IsIconic(handle):
+            return "minimise"
+        if user32.IsZoomed(handle):
+            return "maximise"
+        return "normal"
+    if _has("xprop") and handle:  # pragma: no cover
+        out = subprocess.run(["xprop", "-id", str(handle), "_NET_WM_STATE"], capture_output=True, text=True).stdout
+        if "HIDDEN" in out:
+            return "hidden"
+        if "MAXIMIZED_VERT" in out and "MAXIMIZED_HORZ" in out:
+            return "maximise"
+        return "normal"
+    return "unknown"
+
+
+def _apply_state(window: dict[str, Any], state: str) -> None:
+    handle = int(window.get("handle") or 0)
     if IS_WINDOWS:  # pragma: no cover
         import ctypes
 
         codes = {"minimise": 6, "maximise": 3, "restore": 9, "hide": 0}
-        ctypes.windll.user32.ShowWindow(int(handle), codes.get(state, 9))
-        return {"window": title_contains, "state": state}
+        ctypes.windll.user32.ShowWindow(handle, codes.get(state, 9))
+        return
     if IS_MAC:  # pragma: no cover
         script = {
             "minimise": "set miniaturized of window 1 to true",
@@ -664,13 +827,60 @@ def windows_state(ctx: ActionContext, title_contains: str, state: str) -> Any:
             "hide": "set visible to false",
         }.get(state, "")
         subprocess.run(["osascript", "-e", f'tell application "System Events" to {script}'], capture_output=True)
-        return {"window": title_contains, "state": state}
+        return
     if _has("xdotool"):
-        action_map = {"minimise": "windowminimize", "maximise": "windowsize --sync %s 100% 100%", "restore": "windowactivate"}
-        cmd = action_map.get(state, "windowactivate")
-        subprocess.run(f"xdotool {cmd} {handle}".split(), capture_output=True)
-        return {"window": title_contains, "state": state}
+        command = {
+            "minimise": ["windowminimize", str(handle)],
+            "maximise": ["windowsize", str(handle), "100%", "100%"],
+            "restore": ["windowactivate", str(handle)],
+            "hide": ["windowunmap", str(handle)],
+        }.get(state, ["windowactivate", str(handle)])
+        subprocess.run(["xdotool", *command], capture_output=True)
+        return
     raise ActionFailed("window state changes are unsupported on this platform")
+
+
+@action(
+    name="windows_state",
+    description=(
+        "Minimise, maximise, restore or hide a window, then ask the OS what state it is really in. "
+        "A state change that did not happen is reported as a failure, not as success."
+    ),
+    capability="windows.focus",
+    group="windows",
+    parameters={
+        "type": "object",
+        "properties": {
+            "title_contains": {"type": "string"},
+            "state": {"type": "string", "enum": ["minimise", "maximise", "restore", "hide"]},
+        },
+        "required": ["title_contains", "state"],
+    },
+)
+def windows_state(ctx: ActionContext, title_contains: str, state: str) -> Any:
+    window = next(
+        (w for w in list_windows() if title_contains.lower() in str(w.get("title", "")).lower()), None
+    )
+    if window is None:
+        raise ActionFailed(f"no window matched {title_contains!r}", {"titles": [w.get("title") for w in list_windows()][:30]})
+    _apply_state(window, state)
+    expected = {"minimise": "minimise", "maximise": "maximise", "restore": "normal", "hide": "hidden"}.get(state, "")
+    deadline = time.time() + 3.0
+    observed = "unknown"
+    while time.time() < deadline:
+        observed = window_state(window)
+        if observed == expected:
+            return {"window": window.get("title"), "state": state, "verified": True, "observed": observed}
+        time.sleep(0.15)
+    if observed == "unknown":
+        return {
+            "window": window.get("title"), "state": state, "verified": None,
+            "note": "this desktop cannot report window state, so the request was sent but cannot be confirmed",
+        }
+    raise ActionFailed(
+        f"asked to {state} {window.get('title')!r} but the window reports {observed!r}",
+        {"observed": observed, "expected": expected},
+    )
 
 
 all_actions = lambda: [  # noqa: E731

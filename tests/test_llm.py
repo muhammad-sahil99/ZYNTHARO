@@ -45,6 +45,15 @@ class FakeTransport:
         return 404, {}, iter([b'{"error":{"message":"no route"}}'])
 
 
+def openai_stream(content="hello there", usage=None):
+    """An SSE body shaped like OpenAI's, optionally ending with a usage-only chunk."""
+    lines = ['data: ' + json.dumps({"choices": [{"delta": {"content": content}}]})]
+    if usage is not None:
+        lines.append("data: " + json.dumps({"choices": [], "usage": usage}))
+    lines.append("data: [DONE]")
+    return "\n\n".join(lines) + "\n\n"
+
+
 def openai_ok(content="done", model="spare-model"):
     return json.dumps(
         {
@@ -189,6 +198,24 @@ class RuntimeFailoverTests(unittest.TestCase):
         with self.assertRaises(AllModelsUnavailable) as caught:
             runtime.run(LLMRequest(messages=[Message(role="user", content="hi")], model=""), agent_id="a1")
         self.assertEqual(len(caught.exception.attempts), 2)
+
+    def test_streamed_answers_are_charged_to_quota(self):
+        # Streaming is the voice path. It used to consume tokens that no quota, budget or
+        # billing record ever saw, so the Steward could believe there was headroom that had
+        # already been spent.
+        usage = {"prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18}
+        runtime, quotas, _ = self._runtime({"primary.local": (200, openai_stream("hello there", usage))})
+        chunks = list(runtime.stream(LLMRequest(messages=[Message(role="user", content="hi")], model=""), agent_id="a1"))
+        self.assertTrue(chunks)
+        self.assertIn("hello there", "".join(chunks))
+        self.assertEqual(quotas.models["primary:p-model"].total_tokens, 18)
+
+    def test_a_stream_that_produces_nothing_raises_instead_of_going_silent(self):
+        # Not SSE at all: the adapter yields no text. Returning quietly would look identical
+        # to a model that answered with nothing while the caller carried on.
+        runtime, _, _ = self._runtime({"primary.local": (200, "{\"not\":\"sse\"}")})
+        with self.assertRaises(AllModelsUnavailable):
+            list(runtime.stream(LLMRequest(messages=[Message(role="user", content="hi")], model=""), agent_id="a1"))
 
     def test_requirements_filter_candidates(self):
         runtime, _, _ = self._runtime({})

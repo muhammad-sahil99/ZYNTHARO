@@ -41,6 +41,45 @@ OFFICE_APPS: dict[str, dict[str, str]] = {
 }
 
 
+def _quiesce(application: Any) -> dict[str, Any]:
+    """Turn off the modal prompts that would otherwise block a COM call forever.
+
+    Word and Excel ask "file is in use", "replace existing?" and "keep changes?" through dialogs.
+    A COM call waits behind that dialog indefinitely, so an unattended task hangs with no error at
+    all. Suppressing the alerts is what makes Office automation deterministic; the cost is that
+    this code must answer those questions itself, which it does where they arise.
+    """
+    applied: dict[str, Any] = {}
+    for attribute, value in (("DisplayAlerts", 0), ("AskToUpdateLinks", False), ("ScreenUpdating", False)):
+        try:
+            setattr(application, attribute, value)
+            applied[attribute] = value
+        except Exception:
+            continue
+    return applied
+
+
+def _verify_written(path: str, before: tuple[int, int] | None = None) -> dict[str, Any]:
+    """Prove a file was really written: it exists, is not empty, and has actually changed.
+
+    Office returns from SaveAs even when the write was rejected (read-only folder, protected
+    view, a name the filter mangled). Reporting ``exists: true`` from a path the caller guessed
+    is how a task claims it saved a file that is not there.
+    """
+    target = os.path.abspath(os.path.expanduser(path))
+    if not os.path.exists(target):
+        raise ActionFailed(f"no file was written at {target}", {"path": target})
+    stat = os.stat(target)
+    if stat.st_size == 0:
+        raise ActionFailed(f"{target} was written but is empty", {"path": target, "bytes": 0})
+    if before is not None and (stat.st_size, stat.st_mtime_ns) == before:
+        raise ActionFailed(
+            f"{target} did not change ({stat.st_size} bytes) — the save did not take",
+            {"path": target, "bytes": stat.st_size},
+        )
+    return {"path": target, "bytes": stat.st_size, "modified": round(stat.st_mtime, 3)}
+
+
 def _com(app: str, visible: bool = False) -> Any:
     """Attach to a running Office application or start one (Windows)."""
     if not IS_WINDOWS:
@@ -67,6 +106,7 @@ def _com(app: str, visible: bool = False) -> Any:
             application.Visible = True
         except Exception:
             pass
+    _quiesce(application)
     return application
 
 
@@ -113,7 +153,7 @@ def _call_member(root: Any, path: str, args: Sequence[Any] = ()) -> Any:
     name="office_word",
     description=(
         "Drive Microsoft Word. operation: new | open | write | append | find_replace | "
-        "insert_table | save_as | export_pdf | print | close | read_text | macro."
+        "insert_table | save | save_as | export_pdf | print | close | read_text | macro."
     ),
     capability="office.word",
     group="office",
@@ -173,20 +213,45 @@ def office_word(
         if rows <= 0 or columns <= 0:
             raise ActionFailed("rows and columns are required for insert_table")
         application.ActiveDocument.Tables.Add(application.Selection.Range, rows, columns)
+    elif operation == "save":
+        # There was no plain save at all: text typed into Word only reached the disk if the caller
+        # guessed to use save_as with a path. Saving in place is the operation a person uses.
+        document = _active_document(application)
+        target = os.path.abspath(os.path.expanduser(path or document.FullName))
+        before = (os.stat(target).st_size, os.stat(target).st_mtime_ns) if os.path.exists(target) else None
+        if os.path.exists(target):
+            document.Save()
+        else:
+            if not path:
+                raise ActionFailed("this document has never been saved; pass path to save it")
+            os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+            document.SaveAs2(target)
+        return {"operation": "save", **_verify_written(target, before), "documents_open": int(application.Documents.Count)}
     elif operation in {"save_as", "export_pdf"}:
         document = _active_document(application)
         target = os.path.abspath(os.path.expanduser(path or document.FullName))
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+        before = (os.stat(target).st_size, os.stat(target).st_mtime_ns) if os.path.exists(target) else None
         if operation == "export_pdf" or target.lower().endswith(".pdf"):
             document.ExportAsFixedFormat(target, 17)  # wdExportFormatPDF
         else:
             document.SaveAs2(target)
-        return {"operation": operation, "saved_to": target, "exists": os.path.exists(target)}
+        return {"operation": operation, "saved_to": target, **_verify_written(target, before)}
     elif operation == "print":
         _active_document(application).PrintOut()
     elif operation == "close":
         if application.Documents.Count:
-            application.ActiveDocument.Close(SaveChanges=0)
+            document = _active_document(application)
+            if not int(getattr(document, "Saved", 1)):
+                # Closing with SaveChanges=0 threw the work away without saying so.
+                raise ActionFailed(
+                    "refusing to close Word: the document has unsaved changes",
+                    {
+                        "document": str(getattr(document, "Name", "")),
+                        "hint": "run office_word with operation=save first",
+                    },
+                )
+            document.Close(SaveChanges=0)
         if application.Documents.Count == 0:
             application.Quit(SaveChanges=0)
     elif operation == "read_text":
@@ -275,7 +340,14 @@ def office_excel(
         if not (range and values):
             raise ActionFailed("range and values are required for set_range")
         worksheet.Range(range).Value = values
-        return {"operation": operation, "range": range, "rows": len(values), "columns": len(values[0]) if values else 0}
+        first_cell = str(range).split(":")[0]
+        return {
+            "operation": operation,
+            "range": range,
+            "rows": len(values),
+            "columns": len(values[0]) if values else 0,
+            "read_back": worksheet.Range(first_cell).Value,
+        }
     if operation == "get_range":
         target = worksheet.Range(range or "A1:Z200").Value
         rows = [list(row) for row in target] if isinstance(target, tuple) else [[target]]
@@ -298,14 +370,20 @@ def office_excel(
     if operation == "calculate":
         application.CalculateFull()
         return {"operation": operation}
+    if operation == "save":
+        target = os.path.abspath(os.path.expanduser(path or workbook.FullName))
+        before = (os.stat(target).st_size, os.stat(target).st_mtime_ns) if os.path.exists(target) else None
+        workbook.Save()
+        return {"operation": "save", **_verify_written(target, before)}
     if operation in {"save_as", "export_pdf"}:
         target = os.path.abspath(os.path.expanduser(path or workbook.FullName))
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+        before = (os.stat(target).st_size, os.stat(target).st_mtime_ns) if os.path.exists(target) else None
         if operation == "export_pdf" or target.lower().endswith(".pdf"):
             workbook.ExportAsFixedFormat(0, target)  # xlTypePDF
         else:
             workbook.SaveAs(target)
-        return {"operation": operation, "saved_to": target, "exists": os.path.exists(target)}
+        return {"operation": operation, "saved_to": target, **_verify_written(target, before)}
     if operation == "print":
         workbook.PrintOut()
         return {"operation": operation}

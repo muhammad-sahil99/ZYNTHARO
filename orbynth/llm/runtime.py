@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from ..config import AppConfig, ModelSpec
-from ..events import MODEL_FALLBACK, PROVIDER_ERROR, EventBus
+from ..events import BILLING_BLOCKED, MODEL_FALLBACK, PROVIDER_ERROR, EventBus
 from ..memory import MemoryStore
 from .providers import LLMRequest, LLMResponse, ProviderError, ProviderRegistry, Usage
 from .quotas import QuotaManager
@@ -133,6 +133,10 @@ class ModelRuntime:
 
         self.clock = clock or _time.time
         self.budgets: dict[str, Budget] = {}
+        #: Optional billing gate (contract 22.6). When set, every model call is authorised and
+        #: metered, so gateway mode's caps are enforced on the real traffic and not just drawn
+        #: in a settings panel.
+        self.billing: Any = None
 
     # ----------------------------------------------------------------------------------
     # Model selection
@@ -213,6 +217,21 @@ class ModelRuntime:
             if not decision.allowed:
                 attempts.append({"model": qualified, "skipped": decision.reason, "retry_after": decision.retry_after})
                 continue
+            if self.billing is not None:
+                # Launch-mode caps (contract 22.6) are enforced on real traffic, not just drawn
+                # in a settings panel. BYOK and local-only always pass; a hosted gateway does not.
+                authorised = self.billing.authorize(agent_id, provider=qualified.split(":", 1)[0])
+                if not authorised.allow:
+                    attempts.append({"model": qualified, "skipped": f"billing: {authorised.reason}"})
+                    self.bus.emit(
+                        BILLING_BLOCKED,
+                        source=agent_id,
+                        severity="warning",
+                        model=qualified,
+                        mode=authorised.mode,
+                        reason=authorised.reason,
+                    )
+                    continue
             try:
                 response = self.registry.complete(qualified, request, agent_id)
             except ProviderError as exc:
@@ -235,6 +254,12 @@ class ModelRuntime:
                 continue
 
             self.quotas.record(qualified, response.usage.prompt_tokens, response.usage.completion_tokens)
+            if self.billing is not None:
+                self.billing.record(
+                    agent_id,
+                    tokens=response.usage.total_tokens or 0,
+                    cost_usd=self._cost(qualified, response.usage.prompt_tokens, response.usage.completion_tokens),
+                )
             if budget is not None:
                 budget.charge_tokens(response.usage.total_tokens or 0, self.clock())
             if index > 0:
@@ -244,6 +269,13 @@ class ModelRuntime:
             f"all {len(chain)} candidate models were unavailable for {agent_id}", attempts
         )
 
+    def _cost(self, qualified: str, prompt_tokens: int, completion_tokens: int) -> float:
+        """Price one call from the catalogue's per-million-token rates, or 0 when unknown."""
+        spec = self.config.model(qualified)
+        if spec is None:
+            return 0.0
+        return (prompt_tokens / 1_000_000) * spec.cost_in_per_mtok + (completion_tokens / 1_000_000) * spec.cost_out_per_mtok
+
     def stream(
         self,
         request: LLMRequest,
@@ -252,18 +284,45 @@ class ModelRuntime:
         requirements: Requirements | None = None,
         max_attempts: int = 4,
     ) -> Iterator[str]:
-        """Yield text chunks, transparently failing over before the first chunk arrives."""
+        """Yield text chunks, transparently failing over before the first chunk arrives.
+
+        Quota, billing and budget are charged here from the usage the vendor actually sent.
+        The first version charged nothing at all, so a long voice session spent the day's
+        allowance invisibly. Falling off the end without a single chunk raises, exactly as
+        ``run`` does: a silent empty stream is indistinguishable from a model that answered
+        with nothing, and the caller would have carried on as if it had.
+        """
         chain = self.candidates(prefer, requirements)[:max_attempts]
         attempts: list[dict[str, Any]] = []
+        if not chain:
+            raise AllModelsUnavailable(f"no usable model for {agent_id}", attempts)
+        # Charge an existing budget, but never invent one here: creating a default budget on
+        # the first streamed word would shadow the limits the agent was actually granted.
+        budget = self.budgets.get(agent_id)
         for index, qualified in enumerate(chain):
             if not self.quotas.check(qualified).allowed:
                 continue
+            if self.billing is not None:
+                authorised = self.billing.authorize(agent_id, provider=qualified.split(":", 1)[0])
+                if not authorised.allow:
+                    attempts.append({"model": qualified, "skipped": f"billing: {authorised.reason}"})
+                    self.bus.emit(
+                        BILLING_BLOCKED,
+                        source=agent_id,
+                        severity="warning",
+                        model=qualified,
+                        mode=authorised.mode,
+                        reason=authorised.reason,
+                    )
+                    continue
             produced = False
+            usage: dict[str, Any] = {}
             try:
-                for chunk in self.registry.stream(qualified, request, agent_id):
+                for chunk in self.registry.stream(qualified, request, agent_id, usage_out=usage):
                     produced = True
                     yield chunk
                 if produced:
+                    self._charge_stream(agent_id, qualified, usage, budget)
                     if index > 0:
                         self._announce_fallback(agent_id, chain[0], qualified, attempts)
                     return
@@ -274,6 +333,25 @@ class ModelRuntime:
                 self.quotas.note_error(qualified, exc.kind, exc.retry_after, str(exc))
                 attempts.append({"model": qualified, "error": exc.kind})
                 continue
+        raise AllModelsUnavailable(f"all {len(chain)} candidate models were unavailable for {agent_id}", attempts)
+
+    def _charge_stream(
+        self,
+        agent_id: str,
+        qualified: str,
+        usage: Mapping[str, Any],
+        budget: Any,
+    ) -> None:
+        """Record what a streamed answer cost. Unreported usage charges nothing, never a guess."""
+        prompt = int(usage.get("prompt_tokens") or 0)
+        completion = int(usage.get("completion_tokens") or 0)
+        total = int(usage.get("total_tokens") or (prompt + completion))
+        if total:
+            self.quotas.record(qualified, prompt, completion)
+        if self.billing is not None and total:
+            self.billing.record(agent_id, tokens=total, cost_usd=self._cost(qualified, prompt, completion))
+        if budget is not None and total:
+            budget.charge_tokens(total, self.clock())
 
     def _announce_fallback(self, agent_id: str, intended: str, actual: str, attempts: list[dict[str, Any]]) -> None:
         self.bus.emit(
@@ -309,7 +387,9 @@ class ModelRuntime:
         if record is None:
             raise KeyError(f"unknown agent: {agent_id}")
         previous = record.model
-        self.memory.set_agent_status(agent_id, "running", model=new_model)
+        # Keep the recorded status: a model swap must not make an idle agent look busy forever,
+        # which would also make `Orchestrator.in_flight()` refuse every safe update.
+        self.memory.set_agent_status(agent_id, record.status, model=new_model)
         self.memory.remember(
             agent_id,
             f"transplanted {previous} -> {new_model}; reason: {reason or 'quota/failure failover'}",

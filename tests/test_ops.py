@@ -24,7 +24,15 @@ from orbynth.ops.catalog import (  # noqa: E402
     check_provider_models,
     sign_catalog,
 )
-from orbynth.ops.governor import BACKGROUND, CRITICAL, GAME, BusySignal, ResponsivenessGovernor  # noqa: E402
+from orbynth.ops.governor import (  # noqa: E402
+    BACKGROUND,
+    CRITICAL,
+    GAME,
+    HEAVY_LOAD,
+    VIDEO_CALL,
+    BusySignal,
+    ResponsivenessGovernor,
+)
 from orbynth.ops.languages import (  # noqa: E402
     RTL,
     detect,
@@ -127,6 +135,52 @@ class SupervisorTests(unittest.TestCase):
         first._procs[job.job_id].poll()
         second.shutdown()
 
+    def test_adopted_jobs_survive_reconciliation(self):
+        # Adoption used to be dead code: self.jobs.clear() at the end of reconcile() wiped
+        # every job _adopt() had just added, so the report claimed nothing was adopted and
+        # the still-running helper was never watched.
+        home = temp_home()
+        first = Supervisor(home, poll_interval=5.0)
+        first.start(reconcile=False)
+        job = first.spawn([sys.executable, "-c", "import time; time.sleep(30)"], name="adoptee", restart="never")
+        first._stop.set()
+        first.shutting_down = True
+        second = Supervisor(home, poll_interval=0.05, adopt_orphans=True)
+        report = second.start()
+        self.assertIn("adoptee", report["adopted"], report)
+        self.assertIn(job.job_id, second.jobs)
+        self.assertEqual(report["terminated"], [])
+        second.shutdown(grace=2.0)
+        first._procs[job.job_id].poll()
+
+    def test_interrupted_workspaces_are_cleaned_at_startup(self):
+        # A crashed run's scratch directory used to survive forever: the cleanup loop only
+        # covered jobs it had just terminated, which skipped the process-is-gone case.
+        home = temp_home()
+        scratch = os.path.join(home, "scratch", "interrupted")
+        os.makedirs(scratch, exist_ok=True)
+        first = Supervisor(home, poll_interval=5.0)
+        first.start(reconcile=False)
+        job = first.spawn(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            name="interrupted",
+            restart="never",
+            workspace=scratch,
+        )
+        first._stop.set()
+        first.shutting_down = True
+        # The supervisor died; the helper did not, so kill it to leave a "process gone" entry.
+        from orbynth.ops.supervisor import _terminate_tree
+
+        _terminate_tree(job.pid, job.pgid, force=True)
+        first._procs[job.job_id].wait(timeout=5)
+        second = Supervisor(home, poll_interval=0.05)
+        report = second.start()
+        self.assertIn("interrupted", [entry["name"] for entry in report["orphaned"]], report)
+        self.assertIn(scratch, report["workspaces_cleaned"])
+        self.assertFalse(os.path.exists(scratch))
+        second.shutdown()
+
     def test_dead_job_from_a_previous_run_is_reported_as_orphaned(self):
         home = temp_home()
         first = Supervisor(home, poll_interval=5.0)
@@ -155,6 +209,16 @@ class PreflightTests(unittest.TestCase):
         self.assertFalse(decision.can_run)
         self.assertTrue(decision.advice)
         self.assertIn("never unlocks", " ".join(decision.reasons) + decision.advice)
+
+    def test_windows_audio_probe_is_not_a_display_probe(self):
+        # The bug this pins down: audio_device used to be filled from the screen-width metric,
+        # so a machine with no sound hardware looked ready for voice work. The probe must ask
+        # an audio question; off Windows it is simply not consulted.
+        from orbynth.ops.preflight import _windows_audio_available
+
+        self.assertIsInstance(_windows_audio_available(), bool)
+        state = MachineState.detect()
+        self.assertIsInstance(state.audio_device, bool)
 
     def test_user_request_is_not_silently_skipped(self):
         decision = self.preflight.check(
@@ -240,6 +304,17 @@ class OwnerTests(unittest.TestCase):
         fresh = owner.rotate_recovery_code()
         self.assertNotEqual(fresh, recovery)
         self.assertFalse(owner.verify_recovery(recovery, "another-pin"))
+
+    def test_using_the_recovery_code_rotates_it_without_asking_the_caller(self):
+        # The rotation used to live in the CLI command only, so every other caller of a
+        # library API left the code it had just used valid forever.
+        owner = OwnerRegistry(temp_home())
+        first_code = owner.setup("Owner", "correct-horse")
+        self.assertTrue(owner.verify_recovery(first_code, "a-new-long-pin"))
+        self.assertTrue(owner.last_recovery_code)
+        self.assertNotEqual(owner.last_recovery_code, first_code)
+        self.assertFalse(owner.verify_recovery(first_code, "yet-another-pin"))
+        self.assertTrue(owner.verify_recovery(owner.last_recovery_code, "yet-another-pin"))
 
     def test_repeated_failures_lock_the_gate(self):
         owner = OwnerRegistry(temp_home(), max_attempts=2, lockout_seconds=60)
@@ -345,6 +420,35 @@ class VerificationTests(unittest.TestCase):
         verdict = self.verifier().check(contract, performed=performed)
         self.assertEqual(verdict.side_effects, [])
         self.assertEqual(verdict.status, MET)
+
+    def test_a_request_writes_down_what_it_expects_to_touch(self):
+        from orbynth.ops.verification import capabilities_from_request, contract_for_request
+
+        caps = capabilities_from_request("download the invoice PDFs, rename them and delete the duplicates")
+        self.assertIn("filesystem.write", caps)
+        self.assertIn("filesystem.delete", caps)
+        self.assertNotIn("shell.exec", caps)
+        empty = capabilities_from_request("say hello")
+        self.assertEqual(empty, ())
+        contract = contract_for_request("t-9", "save a summary to report.txt", expected_outputs=["report.txt"])
+        self.assertEqual(contract.request, "save a summary to report.txt")
+        self.assertEqual([c.target for c in contract.criteria], ["report.txt"])
+
+    def test_a_contract_with_nothing_to_check_is_never_met(self):
+        verdict = self.verifier().check(TaskContract("t-6", "do something vague"))
+        self.assertEqual(verdict.status, UNCERTAIN)
+        self.assertIn("no checkable success criteria", verdict.summary)
+
+    def test_side_effects_line_is_honest_when_no_capabilities_were_declared(self):
+        contract = TaskContract("t-7", "read the config")
+        contract.add("file_exists", target="config.json")
+        verdict = self.verifier().check(contract, performed=[{"action": "fs_delete", "capability": "filesystem.delete"}])
+        self.assertIn("side effects not judged", verdict.summary)
+        declared = TaskContract("t-8", "read the config")
+        declared.intended_capabilities = ("filesystem.read",)
+        declared.add("file_exists", target="config.json")
+        clean = self.verifier().check(declared, performed=[{"action": "fs_read", "capability": "filesystem.read"}])
+        self.assertIn("0 unintended side effect(s)", clean.summary)
 
     def test_risk_tiers_batch_the_harmless_and_never_shortcut_the_irreversible(self):
         tiers = RiskTiers()
@@ -500,9 +604,21 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual((spec.rpm, spec.rpd, spec.tpm), (30, 900, 60_000))
 
 
+def _quiet_governor(**kwargs):
+    """A governor that cannot see this host: no detector, and load pinned to zero.
+
+    Both injections matter. These tests used to inject the signals but not the load, so on a
+    busy machine (a CI box, a laptop compiling) ``evaluate([])`` still paused background work
+    and the release gate failed for a reason that had nothing to do with the code under test.
+    """
+    kwargs.setdefault("detector", lambda: [])
+    kwargs.setdefault("load_provider", lambda: 0.0)
+    return ResponsivenessGovernor(**kwargs)
+
+
 class GovernorTests(unittest.TestCase):
     def test_game_pauses_background_but_not_the_users_own_request(self):
-        governor = ResponsivenessGovernor(detector=lambda: [])
+        governor = _quiet_governor()
         state = governor.evaluate([BusySignal(GAME, "valorant", 0.9)])
         self.assertTrue(state.any_pause)
         self.assertTrue(governor.may_run(CRITICAL, state)[0])
@@ -512,10 +628,25 @@ class GovernorTests(unittest.TestCase):
         self.assertGreater(governor.delay_for(BACKGROUND, state), 0)
 
     def test_idle_machine_lets_everything_run(self):
-        governor = ResponsivenessGovernor(detector=lambda: [])
+        governor = _quiet_governor()
         state = governor.evaluate([])
         self.assertTrue(governor.may_run(BACKGROUND, state)[0])
         self.assertEqual(governor.delay_for(BACKGROUND, state), 0.0)
+
+    def test_a_loaded_machine_pauses_background_work(self):
+        """The load reading is part of the policy, so it has to be injectable and real."""
+        governor = ResponsivenessGovernor(detector=lambda: [], load_provider=lambda: 1.4)
+        state = governor.evaluate([])
+        self.assertFalse(governor.may_run(BACKGROUND, state)[0])
+        self.assertTrue(governor.may_run(CRITICAL, state)[0])
+
+    def test_busy_reason_names_what_is_holding_the_machine(self):
+        self.assertEqual(_quiet_governor().busy_reason(), "")
+        busy = _quiet_governor()
+        busy.detector = lambda: [BusySignal(GAME, "valorant"), BusySignal(VIDEO_CALL, "teams")]
+        reason = busy.busy_reason()
+        self.assertIn("game", reason)
+        self.assertIn("video_call", reason)
 
     def test_pause_and_resume_are_reported_once_each(self):
         events: list[str] = []
@@ -524,16 +655,38 @@ class GovernorTests(unittest.TestCase):
         bus = EventBus()
         bus.subscribe(GOVERNOR_PAUSED, lambda e: events.append("paused"))
         bus.subscribe(GOVERNOR_RESUMED, lambda e: events.append("resumed"))
-        governor = ResponsivenessGovernor(bus=bus, detector=lambda: [])
+        governor = _quiet_governor(bus=bus)
         governor.evaluate([BusySignal(GAME, "cs2")])
         self.assertTrue(governor.may_run(CRITICAL, governor.evaluate([BusySignal(GAME, "cs2")]))[0])
         governor.evaluate([])
         self.assertEqual(events, ["paused", "resumed"])
 
     def test_priority_change_never_raises(self):
-        governor = ResponsivenessGovernor(detector=lambda: [])
+        governor = _quiet_governor()
         self.assertIn(governor.apply_priority("below_normal"), {"below_normal", "normal"})
         self.assertIn(governor.summary()["priority"], {"below_normal", "normal"})
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "posix nice semantics")
+    def test_priority_is_absolute_not_cumulative(self):
+        """Asking twice for the same level must not keep lowering the process.
+
+        ``os.nice()`` is relative: the old implementation added 10 on every call and reached
+        the floor after two, so "below normal" was silently "as low as possible".
+        """
+        governor = _quiet_governor()
+        original = os.getpriority(os.PRIO_PROCESS, 0)
+        try:
+            self.assertEqual(governor.apply_priority("below_normal"), "below_normal")
+            first = os.getpriority(os.PRIO_PROCESS, 0)
+            governor.apply_priority("below_normal")
+            second = os.getpriority(os.PRIO_PROCESS, 0)
+            self.assertEqual(first, second)
+            self.assertEqual(second, 10)
+        finally:
+            try:
+                os.setpriority(os.PRIO_PROCESS, 0, original)
+            except OSError:  # pragma: no cover - would need privileges already given up
+                pass
 
 
 class LanguageTests(unittest.TestCase):
@@ -555,6 +708,15 @@ class LanguageTests(unittest.TestCase):
     def test_stray_rtl_characters_do_not_flip_direction(self):
         self.assertEqual(direction_of("File عد name"), "ltr")
         self.assertEqual(direction_of("report (رپورٹ محفوظ کریں)").__class__, str)
+
+    def test_persian_is_not_swallowed_by_urdu(self):
+        # پ چ ژ گ ک ی are shared by Urdu and Persian, and testing the combined set first made
+        # every Persian sentence score as Urdu; Persian only ever won on a letter it does not
+        # actually use.
+        self.assertEqual(detect("گزارش مالی"), "fa")
+        self.assertEqual(detect("رپورٹ محفوظ کریں"), "ur")
+        self.assertEqual(detect("حفظ التقرير في الملف"), "ar")
+        self.assertEqual(detect("سلام"), "ar")  # indistinguishable without a dictionary
 
     def test_ocr_packs_and_profiles_are_per_language(self):
         self.assertIn("urd", ocr_languages(["ur"]))
@@ -637,6 +799,31 @@ class PlanningTests(unittest.TestCase):
         self.assertTrue(all(m["exit"] for m in MILESTONES))
 
 
+class SpawnTests(unittest.TestCase):
+    def test_a_launched_helper_remembers_the_supervisor_that_owns_it(self):
+        # terminate() used to look the supervisor up in a module global, so a second
+        # supervisor -- a restart, or a test -- meant stopping the wrong process book.
+        from orbynth.ops.spawn import Launched, managed_popen, set_supervisor
+
+        supervisor = Supervisor(temp_home(), poll_interval=5.0)
+        supervisor.start(reconcile=False)
+        set_supervisor(supervisor)
+        try:
+            launched = managed_popen([sys.executable, "-c", "import time; time.sleep(30)"], name="probe")
+            self.assertTrue(launched.supervised)
+            self.assertIs(launched.supervisor, supervisor)
+            self.assertIsInstance(launched, Launched)
+            replaced = Supervisor(temp_home(), poll_interval=5.0)
+            set_supervisor(replaced)
+            launched.terminate(force=True)
+            self.assertEqual(launched.job.status, STOPPED)
+            self.assertTrue(any(j.status == STOPPED for j in supervisor.jobs.values()))
+            replaced.shutdown()
+        finally:
+            set_supervisor(None)
+            supervisor.shutdown(grace=2.0)
+
+
 class RegistryOwnerGateTests(unittest.TestCase):
     def test_gate_is_off_by_default_and_on_when_requested(self):
         from orbynth.actions import filesystem
@@ -665,6 +852,86 @@ class RegistryOwnerGateTests(unittest.TestCase):
         self.assertTrue(denied.evidence.get("owner_required"))
         self.assertTrue(registry.owner.verify_pin("correct-horse"))
         self.assertTrue(registry.invoke("fs_delete", armed, path=second).ok)
+
+
+class AuditFixTests(unittest.TestCase):
+    """Regressions for faults found by reading the seams rather than by breaking them."""
+
+    def test_one_definition_of_irreversible_governs_every_consumer(self):
+        """The owner gate, the verification tier and the registry must not disagree.
+
+        They used to: ``model.assign`` and ``memory.admin`` demanded a PIN but were tiered as
+        routine work, so the two systems held different beliefs about the same action.
+        """
+        from orbynth.actions.registry import OWNER_IRREVERSIBLE
+        from orbynth.ops import verification
+        from orbynth.ops.owner import IRREVERSIBLE_CAPABILITIES as owner_list
+        from orbynth.ops.risk import IRREVERSIBLE_CAPABILITIES as canonical
+
+        self.assertEqual(canonical, frozenset(owner_list))
+        self.assertEqual(canonical, frozenset(OWNER_IRREVERSIBLE))
+        self.assertEqual(canonical, frozenset(verification.IRREVERSIBLE_CAPABILITIES))
+        self.assertIn("model.assign", canonical)
+        self.assertIn("memory.admin", canonical)
+
+    def test_preflight_defers_desktop_work_when_the_governor_says_busy(self):
+        """``busy_reason`` used to be declared and never filled, so this branch was dead."""
+        preflight = Preflight(
+            state_provider=lambda: MachineState(),
+            busy_provider=lambda: "video_call",
+        )
+        decision = preflight.check(TaskRequirements(gui=True))
+        self.assertEqual(decision.action, DEFER)
+        self.assertIn("video_call", "; ".join(decision.reasons))
+
+    def test_preflight_uses_the_headless_path_on_a_busy_machine(self):
+        preflight = Preflight(state_provider=lambda: MachineState(), busy_provider=lambda: "game")
+        decision = preflight.check(TaskRequirements(gui=True, background_ok=True), origin="schedule")
+        self.assertEqual(decision.action, RUN_BACKGROUND)
+
+    def test_an_unreadable_busy_probe_never_blocks_a_task(self):
+        def explode() -> str:
+            raise RuntimeError("probe broke")
+
+        preflight = Preflight(state_provider=lambda: MachineState(), busy_provider=explode)
+        self.assertEqual(preflight.check(TaskRequirements()).action, RUN_NOW)
+
+    def test_isolation_is_only_offered_when_it_is_configured(self):
+        locked = MachineState(session_locked=True)
+        without = Preflight(state_provider=lambda: locked, isolation_available=False)
+        self.assertEqual(without.check(TaskRequirements(gui=True)).action, DEFER)
+        with_iso = Preflight(state_provider=lambda: locked, isolation_available=True)
+        self.assertEqual(with_iso.check(TaskRequirements(gui=True)).action, RUN_ISOLATED)
+
+    def test_idle_time_comes_from_the_probe_and_drives_user_presence(self):
+        """``idle_seconds`` was never detected, so ``user_active`` was always True."""
+        present = MachineState(idle_seconds=4)
+        absent = MachineState(idle_seconds=900)
+        self.assertTrue(present.user_active)
+        self.assertFalse(absent.user_active)
+        check = Preflight(state_provider=lambda: absent)
+        self.assertEqual(check.check(TaskRequirements(user_present=True)).action, DEFER)
+        # A headless run on an empty desktop is allowed to use the non-GUI path.
+        decision = Preflight().check(TaskRequirements(gui=True, background_ok=True), origin="schedule", state=absent)
+        self.assertEqual(decision.action, RUN_BACKGROUND)
+
+    def test_supervisor_journal_never_records_helper_environment_values(self):
+        """A helper's environment can hold a provider key; the journal is plain text."""
+        home = tempfile.mkdtemp(prefix="orbynth-journal-")
+        supervisor = Supervisor(home, poll_interval=5.0)
+        try:
+            job = supervisor.spawn(
+                [sys.executable, "-c", "import time; time.sleep(5)"],
+                name="leaky",
+                env={"OPENAI_API_KEY": "sk-not-a-real-key"},
+            )
+            supervisor._save()  # noqa: SLF001 - the journal write is what is under test
+            raw = (supervisor.home / "jobs.json").read_text(encoding="utf-8")
+            self.assertNotIn("sk-not-a-real-key", raw)
+            self.assertIn("OPENAI_API_KEY", raw)
+            self.assertIn(job.job_id, raw)
+        finally:
+            supervisor.shutdown(grace=1.0)
 
 
 if __name__ == "__main__":

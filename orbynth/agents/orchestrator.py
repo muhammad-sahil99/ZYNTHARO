@@ -29,6 +29,7 @@ from typing import Any, Callable, Iterable, Sequence
 from ..actions.registry import ActionContext, ActionRegistry
 from ..config import AgentConfig, AppConfig, expand_capabilities
 from ..events import (
+    AGENT_MESSAGE,
     AGENT_SPAWNED,
     AGENT_TERMINATED,
     LOG,
@@ -77,6 +78,13 @@ class WorkItem:
     context: str = ""
     model: str = ""
     depends_on: list[str] = field(default_factory=list)
+    #: Success criteria written *before* the work starts (contract 22.4). Either explicit
+    #: ``{"kind", "target", "expected", "note"}`` dicts, or paths the task must produce.
+    criteria: list[dict[str, Any]] = field(default_factory=list)
+    expected_outputs: list[str] = field(default_factory=list)
+    #: "interactive" work is never held back by the governor; "background" work yields to
+    #: games, calls and presentations (contract 22.11).
+    work_class: str = "interactive"
 
 
 class Orchestrator:
@@ -90,12 +98,20 @@ class Orchestrator:
         memory: MemoryStore,
         bus: EventBus,
         max_parallel: int | None = None,
+        governor: Any = None,
+        verifier: Any = None,
+        preflight: Any = None,
     ):
         self.config = config
         self.runtime = runtime
         self.actions = actions
         self.memory = memory
         self.bus = bus
+        #: Operational layer, optional so a bare Orchestrator still works in tests and as an
+        #: embedded library. When present, tasks get contracts, verdicts and courtesy.
+        self.governor = governor
+        self.verifier = verifier
+        self.preflight = preflight
         self.max_parallel = max_parallel or config.safety.max_parallel_agents
         self.executor = ThreadPoolExecutor(max_workers=self.max_parallel, thread_name_prefix="orbynth-agent")
         self.agents: dict[str, Agent] = {}
@@ -268,13 +284,24 @@ class Orchestrator:
             context += "\n\nUpstream results:\n" + "\n".join(
                 f"- {dep}: {(self.memory.task(dep) or {}).get('report', {}).get('summary', 'pending')}" for dep in task.depends_on
             )
-        future = self.executor.submit(agent.run_task, task.title, task.objective, context, 24, None, team_id)
+        contract = self._contract_for(task, agent, parent)
+        future = self.executor.submit(
+            agent.run_task,
+            task.title,
+            task.objective,
+            context,
+            24,
+            None,
+            team_id,
+            contract=contract,
+            work_class=task.work_class,
+        )
         if not wait:
             return future
         report = future.result()
         if parent is not None:
             self.bus.emit(
-                "agent.message",
+                AGENT_MESSAGE,
                 source=agent.id,
                 to=parent.id,
                 direction="out",
@@ -282,6 +309,35 @@ class Orchestrator:
                 kind="report",
             )
         return report
+
+    def _contract_for(self, task: WorkItem, agent: Agent, parent: Agent | None) -> Any:
+        """Write down what "done" means before the work starts (contract 22.4).
+
+        This is the difference between "every step ran" and "the goal was reached": criteria
+        exist before the agent can rationalise its result, and a separate verifier checks them
+        afterwards. Returns None when verification is not wired in.
+        """
+        from ..ops.verification import FILE_EXISTS, SuccessCriterion, TaskContract
+
+        if self.verifier is None:
+            return None
+        contract = TaskContract(
+            task_id="",
+            request=task.objective or task.title,
+            intended_capabilities=tuple(task.capabilities),
+            requested_by=parent.name if parent is not None else "owner",
+        )
+        for entry in task.criteria:
+            contract.criteria.append(SuccessCriterion.from_json(entry))
+        for output in task.expected_outputs:
+            contract.add(FILE_EXISTS, target=output, note="output this task promised")
+        return contract
+
+    def preflight_task(self, requirements: Any, origin: str = "user_request", state: Any = None) -> Any:
+        """Ask whether this machine can do the work now, before spending a model call on it."""
+        if self.preflight is None:
+            return None
+        return self.preflight.check(requirements, origin=origin, state=state)
 
     # ----------------------------------------------------------------------------------
     # Teams and long tasks
@@ -323,6 +379,9 @@ class Orchestrator:
         started = time.time()
         futures: dict[Future[AgentReport], WorkItem] = {}
         for item in items:
+            # A long objective is background work: it yields to the user's machine (22.11).
+            if item.work_class == "interactive":
+                item.work_class = "background"
             future = self.dispatch(item, parent=foreman, team_id=team.team_id, wait=False)
             assert isinstance(future, Future)
             futures[future] = item
@@ -462,7 +521,7 @@ class Orchestrator:
         payload = {"message": message, "health": {k: v for k, v in health.items() if k != "models"}}
         if sovereign is not None:
             self.memory.remember(sovereign.id, f"escalation: {message}", kind="escalation", importance=0.9, tags=["steward"])
-            self.bus.emit("agent.message", source=self._steward.id if self._steward else "steward", to=sovereign.id, direction="out", preview=message[:200], kind="escalation")
+            self.bus.emit(AGENT_MESSAGE, source=self._steward.id if self._steward else "steward", to=sovereign.id, direction="out", preview=message[:200], kind="escalation")
         self.bus.emit(LOG, source="steward", severity="warning", **payload)
 
     def monitor_loop(self, interval: float = 20.0, stop_event: threading.Event | None = None) -> None:

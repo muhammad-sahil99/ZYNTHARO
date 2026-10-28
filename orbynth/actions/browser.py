@@ -297,6 +297,9 @@ class CDPController(BrowserController):
         self.timeout = timeout
         self._ids = 0
         self._sockets: dict[str, Any] = {}
+        self._downloads: dict[str, dict[str, Any]] = {}
+        self._download_dir = ""
+        self._dialog_policy = ""
 
     # -- transport ---------------------------------------------------------------------
     def _http(self, path: str) -> Any:
@@ -394,9 +397,44 @@ class CDPController(BrowserController):
         return target
 
     def navigate(self, url: str, tab_id: str = "") -> dict[str, Any]:
+        """Navigate, then wait for the page to be genuinely ready.
+
+        Returning "navigating" immediately meant the next action ran against the previous
+        document — the classic reason an automated flow clicks the old page's button.
+        """
         ws = self._page_ws(tab_id)
         self._send(ws, "Page.navigate", {"url": url})
-        return {"url": url, "status": "navigating"}
+        return {"url": url, "status": "ready", **self.wait_ready(ws)}
+
+    def wait_ready(self, ws_url: str = "", timeout: float = 30.0) -> dict[str, Any]:
+        """Poll the document until it reports complete (or the timeout is reported honestly)."""
+        ws = ws_url or self._page_ws()
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                payload = self._send(ws, "Runtime.evaluate", {
+                    "expression": "({ready: document.readyState, url: location.href, title: document.title})",
+                    "returnByValue": True,
+                })
+            except Exception:
+                payload = {}
+            value = (payload or {}).get("result", {}).get("value") if isinstance(payload, dict) else None
+            if isinstance(value, dict) and value.get("ready") == "complete":
+                return {"ready_state": "complete", "final_url": value.get("url"), "title": value.get("title")}
+            time.sleep(0.15)
+        return {"ready_state": "timeout"}
+
+    def handle_dialog(self, accept: bool = True, text: str = "", policy: str = "") -> dict[str, Any]:
+        """Answer a blocking JavaScript dialog.
+
+        An unhandled ``confirm()`` or ``beforeunload`` freezes the page: every later command waits
+        for a dialog nobody will ever answer. A policy can also be set once so dialogs during a
+        run are answered automatically.
+        """
+        if policy:
+            self._dialog_policy = policy
+        self._send(self._page_ws(), "Page.handleJavaScriptDialog", {"accept": bool(accept), "promptText": text or None})
+        return {"accept": accept, "prompt": text, "policy": self._dialog_policy or "manual"}
 
     def reload(self, hard: bool = False) -> dict[str, Any]:
         self._send(self._page_ws(), "Page.reload", {"ignoreCache": hard})
@@ -415,15 +453,65 @@ class CDPController(BrowserController):
             raise ActionFailed(f"page script failed: {result['exceptionDetails'].get('text', '')}", {"script": script[:200]})
         return result.get("result", {}).get("value")
 
-    def click(self, target: str, by: str = "css", nth: int = 1) -> dict[str, Any]:
-        script = _click_script(target, by, nth)
-        result = self.evaluate(script)
-        if not result or not result.get("found"):
-            raise ActionFailed(
-                f"no element matched {target!r} (by={by})",
-                {"candidates": (result or {}).get("candidates", [])[:20]},
-            )
-        return {"clicked": target, "by": by, **result}
+    def click(self, target: str, by: str = "css", nth: int = 1, verify: bool = True) -> dict[str, Any]:
+        """Click, then check that something actually happened; otherwise escalate the strategy.
+
+        Clicking and returning is how an automated flow ends up continuing on a page that never
+        changed — a decoy matched, a handler swallowed the event, or the element sat behind a
+        transparent overlay. Every attempt is now compared against a page fingerprint, and the
+        next strategy (text, aria, like, css) is tried before failure is reported.
+        """
+        attempts: list[dict[str, Any]] = []
+        strategies = [by] + [other for other in ("text", "aria", "like", "css") if other != by]
+        before = self.fingerprint() if verify else {}
+        for strategy in strategies:
+            try:
+                result = self.evaluate(_click_script(target, strategy, nth))
+            except ActionFailed as exc:
+                attempts.append({"by": strategy, "ok": False, "error": str(exc)[:160], "evidence": getattr(exc, "evidence", None)})
+                continue
+            if not (result or {}).get("found"):
+                attempts.append({
+                    "by": strategy, "ok": False,
+                    "candidates": (result or {}).get("candidates", [])[:8],
+                    "cross_origin_frames": (result or {}).get("cross_origin_frames"),
+                })
+                continue
+            if not verify:
+                return {"clicked": target, "by": strategy, **result, "verified": None, "attempts": attempts}
+            time.sleep(0.35)
+            after = self.fingerprint()
+            if not isinstance(after, dict) or not after:
+                # The page could not be fingerprinted: accept the click but do not claim proof.
+                return {"clicked": target, "by": strategy, **result, "verified": False,
+                        "verify_error": "page fingerprint unavailable", "attempts": attempts}
+            change = self._changed(before, after)
+            attempts.append({"by": strategy, "ok": True, "changed": change or None, "point": result.get("point")})
+            if change:
+                return {"clicked": target, "by": strategy, **result, "verified": True, "change": change, "attempts": attempts}
+        raise ActionFailed(
+            f"click on {target!r} did not change the page ({len(attempts)} strategy attempt(s) tried)",
+            {"attempts": attempts, "hint": "the target may sit in a cross-origin frame, need a hover first, or be a no-op control — pass verify=false to click it anyway"},
+        )
+
+    def fingerprint(self) -> dict[str, Any]:
+        """A cheap but real fingerprint of page state, used to prove an action did something."""
+        value = self.evaluate(
+            "({url: location.href, title: document.title, "
+            "nodes: document.getElementsByTagName('*').length, "
+            "text_len: (document.body ? document.body.innerText.length : 0), "
+            "hash: (() => { const t = document.body ? document.body.innerText.slice(0, 4000) : ''; "
+            "let h = 0; for (let i = 0; i < t.length; i++) { h = (h * 31 + t.charCodeAt(i)) | 0; } return h; })()})"
+        )
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _changed(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+        changes: dict[str, Any] = {}
+        for key in ("url", "title", "nodes", "text_len", "hash"):
+            if before.get(key) != after.get(key):
+                changes[key] = {"from": before.get(key), "to": after.get(key)}
+        return changes
 
     def type_text(self, target: str, text: str, by: str = "css", clear: bool = True) -> dict[str, Any]:
         script = _type_script(target, text, by, clear)
@@ -488,55 +576,202 @@ class CDPController(BrowserController):
         }
 
     def downloads(self) -> list[dict[str, Any]]:
-        """Downloads observed by the browser (populated from the download directory)."""
-        rows: list[dict[str, Any]] = []
-        try:
-            import glob
+        """Downloads captured through the DevTools download events, with their real state.
 
-            directory = os.path.expanduser(os.environ.get("ORBYNTH_DOWNLOAD_DIR", "~/Downloads"))
-            for path in sorted(glob.glob(os.path.join(directory, "*")), key=os.path.getmtime, reverse=True)[:30]:
-                rows.append({"path": path, "size": os.path.getsize(path), "modified": os.path.getmtime(path)})
-        except OSError:
-            pass
-        return rows
+        The previous implementation listed ~/Downloads and hoped: it could hand back a file the
+        user downloaded last week as though the agent had just fetched it, and it could not tell a
+        finished file from a half-written ``.crdownload``. Rows now come from
+        ``Page.downloadWillBegin`` / ``Page.downloadProgress``, keyed by the browser's own guid.
+        """
+        return [
+            {
+                "guid": guid,
+                "url": item.get("url", ""),
+                "path": item.get("path", ""),
+                "suggested": item.get("suggested", ""),
+                "bytes": item.get("bytes", 0),
+                "state": item.get("state", "inProgress"),
+            }
+            for guid, item in self._downloads.items()
+        ]
+
+    def enable_downloads(self, directory: str = "") -> dict[str, Any]:
+        """Point the browser at a capture directory and start receiving progress events."""
+        target = directory or os.environ.get("ORBYNTH_DOWNLOAD_DIR") or os.path.join(
+            os.path.expanduser(os.environ.get("ORBYNTH_HOME", "~/.orbynth")), "downloads"
+        )
+        os.makedirs(target, exist_ok=True)
+        self._download_dir = target
+        ws = self._page_ws()
+        self._send(ws, "Page.setDownloadBehavior", {"behavior": "allowAndName", "downloadPath": target, "eventsEnabled": True})
+        self._drain_events(ws)
+        return {"directory": target, "capturing": True}
+
+    def wait_for_download(self, timeout: float = 120.0, index: int = 0) -> dict[str, Any]:
+        """Block until a download is genuinely complete, then return it with its real size."""
+        if not self._download_dir:
+            self.enable_downloads()
+        ws = self._page_ws()
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self._drain_events(ws)
+            rows = self.downloads()
+            if len(rows) > index and rows[index].get("state") == "completed":
+                item = rows[index]
+                path = item.get("path") or ""
+                if path and os.path.exists(path) and not path.endswith(".crdownload"):
+                    item["bytes"] = os.path.getsize(path)
+                    return item
+                item["state"] = "completed_without_file"
+                return item
+            time.sleep(0.25)
+        raise ActionFailed(f"no download finished within {timeout}s", {"downloads": self.downloads()})
+
+    def _drain_events(self, ws_url: str) -> list[dict[str, Any]]:
+        """Read queued browser events without consuming a response someone is waiting for."""
+        try:
+            import websocket  # type: ignore
+        except Exception:
+            return []
+        events: list[dict[str, Any]] = []
+        socket_ref = self._socket(ws_url)
+        previous = socket_ref.gettimeout()
+        socket_ref.settimeout(0.05)
+        try:
+            while True:
+                try:
+                    raw = socket_ref.recv()
+                except (websocket.WebSocketTimeoutException, OSError):
+                    break
+                except Exception:
+                    break
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                method = payload.get("method", "")
+                params = payload.get("params", {}) or {}
+                if method == "Page.downloadWillBegin":
+                    guid = str(params.get("guid", ""))
+                    self._downloads[guid] = {
+                        "guid": guid, "url": params.get("url", ""),
+                        "suggested": params.get("suggestedFilename", ""),
+                        "state": "inProgress", "bytes": 0,
+                    }
+                elif method == "Page.downloadProgress":
+                    guid = str(params.get("guid", ""))
+                    item = self._downloads.setdefault(guid, {"guid": guid, "url": "", "state": "inProgress", "bytes": 0})
+                    item["state"] = params.get("state", item.get("state", "inProgress"))
+                    item["bytes"] = params.get("receivedBytes", item.get("bytes", 0))
+                    if params.get("filePath"):
+                        item["path"] = params["filePath"]
+                    if item["state"] == "completed" and not item.get("path"):
+                        item["path"] = os.path.join(self._download_dir or "", item.get("suggested", guid))
+                elif method == "Page.javascriptDialogOpening" and self._dialog_policy in ("accept", "dismiss"):
+                    try:
+                        self._send(ws_url, "Page.handleJavaScriptDialog", {"accept": self._dialog_policy == "accept"})
+                        events.append({"method": "dialog_handled", "params": params})
+                        continue
+                    except Exception:
+                        pass
+                if method:
+                    events.append(payload)
+        finally:
+            try:
+                socket_ref.settimeout(previous)
+            except Exception:
+                pass
+        return events
+
+
+#: Injected at the top of every finder script. A plain ``document.querySelector`` reaches
+#: nothing on a modern application: component libraries render into shadow roots and checkout or
+#: chat widgets live inside iframes, so the selector matches an empty document and the click
+#: silently does nothing. This walks every open shadow root and every same-origin iframe document,
+#: and *counts* the cross-origin frames it cannot reach instead of pretending they are empty.
+_DEEP_JS = """
+      const __orbynthRoots = (root) => {
+        const roots = [root];
+        const seen = new Set(roots);
+        let blocked = 0;
+        for (let i = 0; i < roots.length && i < 64; i++) {
+          const current = roots[i];
+          try {
+            for (const el of current.querySelectorAll('*')) {
+              if (el.shadowRoot && !seen.has(el.shadowRoot)) { seen.add(el.shadowRoot); roots.push(el.shadowRoot); }
+            }
+          } catch (err) {}
+          try {
+            for (const frame of current.querySelectorAll('iframe,frame')) {
+              try {
+                const doc = frame.contentDocument;
+                if (doc && !seen.has(doc)) { seen.add(doc); roots.push(doc); }
+              } catch (err) { blocked += 1; }
+            }
+          } catch (err) {}
+        }
+        return {roots, blocked};
+      };
+      const __deepQueryAll = (selector) => {
+        const scan = __orbynthRoots(document);
+        const hits = [];
+        for (const root of scan.roots) {
+          try { hits.push(...root.querySelectorAll(selector)); } catch (err) {}
+        }
+        return {hits, blocked: scan.blocked, roots: scan.roots.length};
+      };
+"""
 
 
 def _click_script(target: str, by: str, nth: int) -> str:
-    """A single JS expression that finds, highlights and clicks an element."""
+    """A single JS expression that finds, highlights and clicks an element.
+
+    The search is deep: shadow roots and same-origin iframes are included, and the number of
+    cross-origin frames that could not be searched is reported in the result so a miss is
+    explainable rather than mysterious.
+    """
     selector = {
-        "css": json.dumps(target),
+        "css": f"__deepQueryAll({json.dumps(target)}).hits[{nth - 1}]",
         "xpath": f"document.evaluate({json.dumps(target)}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue",
-        "text": f"[...document.querySelectorAll('a,button,[role=button],input[type=submit],span,div')].filter(e => (e.innerText||e.value||'').trim() === {json.dumps(target)})[{nth - 1}]",
-        "like": f"[...document.querySelectorAll('a,button,[role=button],input,[role=link],li,span,div')].filter(e => ((e.innerText||e.getAttribute('aria-label')||e.value||'')+'').toLowerCase().includes({json.dumps(target.lower())}))[{nth - 1}]",
-        "aria": f"document.querySelector('[aria-label=' + JSON.stringify({json.dumps(target)}) + ']')",
-        "testid": f"document.querySelector('[data-testid=' + JSON.stringify({json.dumps(target)}) + ']')",
-        "name": f"document.querySelector('[name=' + JSON.stringify({json.dumps(target)}) + ']')",
-        "id": f"document.getElementById({json.dumps(target)})",
-    }.get(by, json.dumps(target))
+        "text": f"[...__deepQueryAll('a,button,[role=button],input[type=submit],span,div').hits].filter(e => (e.innerText||e.value||'').trim() === {json.dumps(target)})[{nth - 1}]",
+        "like": f"[...__deepQueryAll('a,button,[role=button],input,[role=link],li,span,div').hits].filter(e => ((e.innerText||e.getAttribute('aria-label')||e.value||'')+'').toLowerCase().includes({json.dumps(target.lower())}))[{nth - 1}]",
+        "aria": f"__deepQueryAll('[aria-label=' + JSON.stringify({json.dumps(target)}) + ']').hits[0]",
+        "testid": f"__deepQueryAll('[data-testid=' + JSON.stringify({json.dumps(target)}) + ']').hits[0]",
+        "name": f"__deepQueryAll('[name=' + JSON.stringify({json.dumps(target)}) + ']').hits[0]",
+        "id": f"__deepQueryAll('#' + CSS.escape({json.dumps(target)})).hits[0]",
+    }.get(by, f"__deepQueryAll({json.dumps(target)}).hits[0]")
     return f"""(() => {{
+{_DEEP_JS}
       try {{
         const el = {selector};
-        if (!el) return {{found:false, candidates: [...document.querySelectorAll('a,button,[role=button]')].slice(0,20).map(e => (e.innerText||e.getAttribute('aria-label')||'').trim())}};
+        if (!el) {{
+          const probe = __deepQueryAll('a,button,[role=button],input,[role=link]');
+          return {{found:false, searched_roots: probe.roots, cross_origin_frames: probe.blocked,
+                   candidates: probe.hits.slice(0,20).map(e => (e.innerText||e.getAttribute('aria-label')||e.value||'').trim())}};
+        }}
         el.scrollIntoView({{block:'center'}});
         const rect = el.getBoundingClientRect();
         el.click();
         return {{found:true, tag: el.tagName, text:(el.innerText||el.value||'').slice(0,120),
                  point:[Math.round(rect.left+rect.width/2), Math.round(rect.top+rect.height/2)],
-                 visible: rect.width>0 && rect.height>0}};
+                 visible: rect.width>0 && rect.height>0,
+                 in_shadow: !!(el.getRootNode && el.getRootNode() !== document)}};
       }} catch (e) {{ return {{found:false, error:String(e)}}; }}
     }})()"""
 
 
 def _type_script(target: str, text: str, by: str, clear: bool) -> str:
     finders = {
-        "css": f"document.querySelector({json.dumps(target)})",
-        "name": f"document.querySelector('[name=' + JSON.stringify({json.dumps(target)}) + ']')",
-        "id": f"document.getElementById({json.dumps(target)})",
-        "aria": f"document.querySelector('[aria-label=' + JSON.stringify({json.dumps(target)}) + ']')",
-        "placeholder": f"document.querySelector('[placeholder=' + JSON.stringify({json.dumps(target)}) + ']')",
+        "css": f"__deepQueryAll({json.dumps(target)}).hits[0]",
+        "name": f"__deepQueryAll('[name=' + JSON.stringify({json.dumps(target)}) + ']').hits[0]",
+        "id": f"__deepQueryAll('#' + CSS.escape({json.dumps(target)})).hits[0]",
+        "aria": f"__deepQueryAll('[aria-label=' + JSON.stringify({json.dumps(target)}) + ']').hits[0]",
+        "placeholder": f"__deepQueryAll('[placeholder=' + JSON.stringify({json.dumps(target)}) + ']').hits[0]",
+        "label": f"__deepQueryAll('input,textarea,select').hits.filter(e => ((e.labels && e.labels[0] ? e.labels[0].innerText : '') || '').trim() === {json.dumps(target)})[0]",
     }
     finder = finders.get(by, finders["css"])
     return f"""(() => {{
+{_DEEP_JS}
       try {{
         const el = {finder};
         if (!el) return {{found:false}};
@@ -628,7 +863,11 @@ def launch_browser_with_debugging(url: str = "", port: int = DEFAULT_CDP_PORT, p
         argv.append(f"--user-data-dir={profile}")
     if url:
         argv.append(url)
-    subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    # The automation browser is a helper we own: supervised, so quitting ORBYNTH does not leave
+    # a headless Chrome with a DevTools port open on the user's machine.
+    from ..ops.spawn import managed_popen
+
+    managed_popen(argv, name=f"automation-browser-{port}", kind="browser", restart="on-failure")
     deadline = time.time() + 20
     while time.time() < deadline:
         if find_running_browser(port):
@@ -1112,6 +1351,127 @@ def browser_cookies(ctx: ActionContext) -> Any:
 
 
 @action(
+    name="browser_act",
+    description=(
+        "Click and prove it worked: the click is verified against the page state (url, title, node "
+        "count, text fingerprint) and the expected element or text, retrying with a wider target "
+        "strategy before it reports failure. Use this for any click whose result matters; use "
+        "browser_click only when you truly do not care what it did."
+    ),
+    capability="browser.click",
+    group="browser",
+    parameters={
+        "type": "object",
+        "properties": {
+            "target": {"type": "string"},
+            "by": {"type": "string"},
+            "expect": {"type": "string", "description": "CSS selector that must appear afterwards."},
+            "expect_text": {"type": "string", "description": "Text that must be present afterwards."},
+            "timeout": {"type": "number"},
+        },
+        "required": ["target"],
+    },
+)
+def browser_act(
+    ctx: ActionContext,
+    target: str,
+    by: str = "css",
+    expect: str = "",
+    expect_text: str = "",
+    timeout: float = 8.0,
+) -> Any:
+    browser = _require()
+    before = browser.fingerprint() if hasattr(browser, "fingerprint") else {}
+    clicked = browser.click(target, by)
+    deadline = time.time() + timeout
+    verified: dict[str, Any] | None = None
+    while time.time() < deadline:
+        if expect and browser.evaluate(f"!!document.querySelector({json.dumps(expect)})"):
+            verified = {"by": "expected_selector", "selector": expect}
+            break
+        if expect_text and browser.evaluate(
+            f"(document.body ? document.body.innerText : '').includes({json.dumps(expect_text)})"
+        ):
+            verified = {"by": "expected_text", "text": expect_text}
+            break
+        if hasattr(browser, "fingerprint") and before:
+            change = browser._changed(before, browser.fingerprint())
+            if change:
+                verified = {"by": "page_change", "change": change}
+                break
+        time.sleep(0.25)
+    if verified is None and (expect or expect_text):
+        raise ActionFailed(
+            f"clicked {target!r} but {(expect or expect_text)!r} never appeared within {timeout}s",
+            {"clicked": clicked, "expect": expect or expect_text},
+        )
+    return {"target": target, "clicked": clicked, "verified": verified, "waited_s": round(timeout, 2)}
+
+
+@action(
+    name="browser_download_wait",
+    description=(
+        "Wait until a download is genuinely complete, then return its real path and size. Use after "
+        "clicking a download link: browser_downloads alone cannot tell a finished file from a "
+        "half-written one."
+    ),
+    capability="browser.download",
+    group="browser",
+    parameters={
+        "type": "object",
+        "properties": {"timeout": {"type": "number"}, "index": {"type": "integer"}},
+    },
+)
+def browser_download_wait(ctx: ActionContext, timeout: float = 120.0, index: int = 0) -> Any:
+    browser = _require()
+    waiter = getattr(browser, "wait_for_download", None)
+    if waiter is None:
+        return {"downloads": browser.downloads(), "note": "this controller cannot await a download; listed what exists"}
+    try:
+        return waiter(timeout, index)
+    except NotImplementedError as exc:
+        raise ActionFailed(
+            "this browser controller cannot await a download",
+            {"hint": "attach over CDP (browser_attach) so download progress events are available", "detail": str(exc)},
+        ) from exc
+
+
+@action(
+    name="browser_dialog",
+    description=(
+        "Answer (or set a policy for) a blocking JavaScript dialog — alert, confirm, prompt or the "
+        "beforeunload prompt. An unhandled dialog freezes the page and every later command waits "
+        "on a box nobody will click."
+    ),
+    capability="browser.click",
+    group="browser",
+    parameters={
+        "type": "object",
+        "properties": {
+            "accept": {"type": "boolean"},
+            "text": {"type": "string", "description": "Answer for a prompt() dialog."},
+            "policy": {"type": "string", "enum": ["accept", "dismiss", "manual"]},
+        },
+    },
+)
+def browser_dialog(ctx: ActionContext, accept: bool = True, text: str = "", policy: str = "") -> Any:
+    browser = _require()
+    handler = getattr(browser, "handle_dialog", None)
+    if handler is None:
+        raise ActionFailed(
+            "this browser controller cannot answer dialogs",
+            {"hint": "attach over CDP (browser_attach) rather than the managed browser"},
+        )
+    try:
+        return handler(accept=accept, text=text, policy=policy)
+    except NotImplementedError as exc:
+        raise ActionFailed(
+            "this browser controller cannot answer dialogs",
+            {"hint": "attach over CDP (browser_attach) rather than the managed browser", "detail": str(exc)},
+        ) from exc
+
+
+@action(
     name="browser_key",
     description="Send a key or combination to the page (Enter, ctrl+t, Escape, PageDown…).",
     capability="browser.click",
@@ -1194,6 +1554,9 @@ all_actions = lambda: [  # noqa: E731
     browser_cookies,
     browser_key,
     browser_downloads,
+    browser_download_wait,
+    browser_act,
+    browser_dialog,
     browser_history,
     browser_wait_for,
 ]

@@ -88,6 +88,8 @@ class PyAutoGUIBackend:
             self._keyboard = keyboard.Controller()
         except Exception:
             self._keyboard = None
+        # Before a single coordinate is sent: the process must share the OS's coordinate space.
+        ensure_dpi_awareness()
         self._gui = pyautogui
         self._gui.FAILSAFE = True
         self._gui.PAUSE = 0.02
@@ -188,6 +190,49 @@ class RecordingBackend:
             # Simulates the user (or a dialog) stealing focus mid-operation.
             self.window = WindowRef(title="Some Other App", pid=9999, cls="Other", handle=7)
         return self.window
+
+
+_DPI_STATE: dict[str, Any] = {"applied": False, "scale": 1.0, "detail": "not probed"}
+
+
+def ensure_dpi_awareness() -> dict[str, Any]:
+    """Make this process DPI aware, then report the scale factor.
+
+    Windows silently virtualises coordinates for a process that is not DPI aware. On a laptop at
+    150% scaling the app receives a 1280x720 viewport while the accessibility tree reports
+    physical pixels, so *every* click computed from UI Automation bounds lands several hundred
+    pixels off — the classic "it clicked the wrong thing" failure, and nothing about it looks like
+    a bug. Declaring per-monitor awareness makes the coordinate spaces agree.
+    """
+    global _DPI_STATE
+    if _DPI_STATE["applied"]:
+        return dict(_DPI_STATE)
+    import sys
+
+    if not sys.platform.startswith("win"):
+        _DPI_STATE = {"applied": False, "scale": 1.0, "detail": "not Windows; coordinates are not virtualised"}
+        return dict(_DPI_STATE)
+    try:  # pragma: no cover - Windows only
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        shcore = getattr(ctypes.windll, "shcore", None)
+        applied = False
+        if hasattr(user32, "SetProcessDpiAwarenessContext"):
+            applied = bool(user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)))  # per-monitor v2
+        if not applied and shcore is not None:
+            applied = shcore.SetProcessDpiAwareness(2) == 0
+        scale = 1.0
+        try:
+            hdc = user32.GetDC(0)
+            scale = user32.GetDeviceCaps(hdc, 88) / 96.0  # LOGPIXELSX
+            user32.ReleaseDC(0, hdc)
+        except Exception:
+            pass
+        _DPI_STATE = {"applied": applied, "scale": round(scale, 3), "detail": f"per-monitor DPI aware, {int(scale * 100)}% scaling"}
+    except Exception as exc:  # pragma: no cover - Windows only
+        _DPI_STATE = {"applied": False, "scale": 1.0, "detail": f"DPI awareness could not be set: {exc}"}
+    return dict(_DPI_STATE)
 
 
 _BACKEND: InputBackend | None = None

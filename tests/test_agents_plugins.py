@@ -60,6 +60,42 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(self.stack.memory.task(report.task_id)["status"], "done")
         self.assertTrue(self.stack.memory.audit_log(5, agent.id))
 
+    def test_the_live_task_path_checks_the_outcome_against_a_written_contract(self):
+        # The contract mechanism existed but no live path asserted it produced a verdict, so
+        # the wiring could break silently and every task would look verified.
+        from orbynth.ops.verification import OutcomeVerifier, contract_for_request
+
+        verifier = OutcomeVerifier(self.stack.bus)
+        verifier.register_probe("file_exists", lambda c, o: (os.path.exists(c.target), c.target))
+        self.stack.orchestrator.verifier = verifier
+
+        missing = os.path.join(self.workdir, "never-written.txt")
+        contract = contract_for_request("t-live", f"create {missing}", expected_outputs=[missing])
+        agent = self.stack.spawn("operative", capabilities=["filesystem.write"])
+        report = agent.run_task("write a note", "do nothing at all", contract=contract)
+        self.assertIsNotNone(report.verdict, "the finished task carried no outcome check")
+        self.assertEqual(report.verdict["status"], "not_met")
+        self.assertEqual(report.status, "disputed")
+        self.assertIn("filesystem.write", contract.intended_capabilities)
+
+    def test_the_live_task_path_can_report_a_met_outcome(self):
+        from orbynth.ops.verification import OutcomeVerifier, contract_for_request
+
+        verifier = OutcomeVerifier(self.stack.bus)
+        verifier.register_probe("file_exists", lambda c, o: (os.path.exists(c.target), c.target))
+        self.stack.orchestrator.verifier = verifier
+
+        target = os.path.join(self.workdir, "promised.txt")
+        contract = contract_for_request("t-live-2", f"create {target}", expected_outputs=[target])
+        agent = self.stack.spawn("operative", capabilities=["filesystem.write"])
+        report = agent.run_task(
+            "write a note",
+            f'Write the file. use: fs_write {{"path": "{target}", "content": "hello"}}',
+            contract=contract,
+        )
+        self.assertIsNotNone(report.verdict)
+        self.assertEqual(report.verdict["status"], "met", report.verdict)
+
     def test_ungranted_capability_is_not_even_offered_and_nothing_happens(self):
         victim = os.path.join(self.workdir, "keep-me.txt")
         open(victim, "w").write("important")
@@ -311,6 +347,54 @@ class PluginTests(unittest.TestCase):
         opportunities = self.stack.forge.opportunities(min_repeats=2)
         self.assertTrue(opportunities)
         self.assertIn("fs_list", " ".join(str(entry["sequence"]) for entry in opportunities))
+
+
+class ConfirmationGateTests(unittest.TestCase):
+    """The approval panel must apply to the powerful agents, not only to the small ones.
+
+    ``Agent.act`` used to pre-approve every capability in ``safety.confirm_capabilities`` for
+    any agent of rank 1 or better -- the very list that makes those capabilities require
+    confirmation. The gate cancelled itself, and the Sovereign (the agent that actually calls
+    the destructive tools) never emitted a single ``action.confirm`` card.
+    """
+
+    def setUp(self):
+        from tests.helpers import Stack
+
+        self.stack = Stack()
+        self.workdir = tempfile.mkdtemp(prefix="orbynth-confirm-")
+
+    def tearDown(self):
+        self.stack.close()
+
+    def _victim(self, name: str = "doomed.txt") -> str:
+        path = os.path.join(self.workdir, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("x")
+        return path
+
+    def test_a_sovereign_still_asks_before_a_destructive_action(self):
+        from orbynth.events import ACTION_CONFIRM
+
+        seen: list[dict] = []
+        self.stack.bus.subscribe(ACTION_CONFIRM, lambda event: seen.append(dict(event.payload)))
+        agent = self.stack.spawn("sovereign", capabilities=["filesystem.delete"])
+        target = self._victim()
+
+        result = agent.act("fs_delete", path=target)
+        self.assertFalse(result.ok)
+        self.assertTrue(result.evidence.get("confirmation_required"), result.to_json())
+        self.assertTrue(os.path.exists(target), "the file was deleted without an approval")
+        self.assertTrue(seen, "no confirmation card was ever published")
+        self.assertEqual(seen[0]["action"], "fs_delete")
+
+    def test_an_explicit_approval_lets_the_same_action_through(self):
+        agent = self.stack.spawn("sovereign", capabilities=["filesystem.delete"])
+        target = self._victim("approved.txt")
+        self.stack.actions.approve("fs_delete", True)
+        result = agent.act("fs_delete", path=target)
+        self.assertTrue(result.ok, result.to_json())
+        self.assertFalse(os.path.exists(target))
 
 
 if __name__ == "__main__":

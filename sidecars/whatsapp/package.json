@@ -1,0 +1,15 @@
+{
+  "name": "orbynth-whatsapp-sidecar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ORBYNTH WhatsApp sidecar: JSON-RPC over stdio, one paired session, no UI.",
+  "main": "sidecar.js",
+  "bin": { "orbynth-whatsapp": "sidecar.js" },
+  "scripts": {
+    "check": "node --check sidecar.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "whatsapp-web.js": "^1.26.0"
+  }
+}

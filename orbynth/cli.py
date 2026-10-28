@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -25,6 +26,8 @@ from .llm.providers import ProviderRegistry
 from .llm.quotas import QuotaManager
 from .llm.runtime import ModelRuntime
 from .memory import MemoryStore
+from .ops.languages import ocr_languages
+from .ops.preflight import TaskRequirements
 from .plugins.forge import Forge
 from .plugins.loader import PluginHost
 from .voice.session import TextOnlyVoice, VoiceSession
@@ -48,11 +51,25 @@ class Stack:
     orchestrator: Orchestrator
     voice: Any = None
     hud: Any = field(default=None)
+    # -- operational layer (contract sections 22.1 - 22.11) ---------------------------
+    supervisor: Any = None
+    owner: Any = None
+    billing: Any = None
+    governor: Any = None
+    preflight: Any = None
+    verifier: Any = None
+    sensors: Any = None
+    index: Any = None
 
     def shutdown(self) -> None:
-        if self.hud is not None:
+        if self.index is not None:
             try:
-                self.hud.bridge.stop()
+                self.index.close()
+            except Exception:
+                pass
+        if self.sensors is not None:
+            try:
+                self.sensors.stop()
             except Exception:
                 pass
         if self.voice is not None:
@@ -61,6 +78,20 @@ class Stack:
             except Exception:
                 pass
         self.orchestrator.shutdown()
+        if self.hud is not None:
+            try:
+                self.hud.bridge.stop()
+            except Exception:
+                pass
+        # Last: everything we started dies with us (sidecar, automation browser, workers).
+        if self.supervisor is not None:
+            try:
+                self.supervisor.shutdown(grace=3.0)
+                from .ops.spawn import set_supervisor
+
+                set_supervisor(None)
+            except Exception:
+                pass
         self.memory.close()
 
 
@@ -71,21 +102,107 @@ def build_stack(
     with_voice: bool = False,
     with_hud: bool = False,
 ) -> Stack:
-    """Assemble the whole system from configuration."""
+    """Assemble the whole system from configuration.
+
+    The operational layer is created here and not somewhere else, because "assembled but not
+    wired" is a failure mode this project already had once: a supervisor that nothing starts
+    processes through, an owner gate nothing asks, a preflight nothing consults. Every system
+    built in `ops/` is given to the parts that must use it, on this path.
+    """
+    from .ops.billing import BillingGate, GatewayPolicy
+    from .ops.catalog import ModelCatalog
+    from .ops.governor import ResponsivenessGovernor
+    from .ops.journal import Journal
+    from .ops.owner import OwnerRegistry
+    from .ops.preflight import Preflight
+    from .ops.spawn import set_supervisor
+    from .ops.supervisor import Supervisor
+    from .ops.verification import OutcomeVerifier
+
     bus = EventBus()
     memory = MemoryStore(config.db_path)
     secrets = Secrets(config.home_path)
     registry_actions = build_registry(config, bus, memory)
+    # The action journal is the write-ahead log behind exactly-once behaviour and "undo last
+    # task" (spec 4.5). It has to exist before the first tool call, not after it: an intention
+    # that was never recorded cannot be reconciled. Startup also replays whatever the previous
+    # session left open and reports it, rather than assuming the machine is in the state the
+    # last run intended.
+    journal = Journal(config.home_path / "journal.db", bus)
+    registry_actions.journal = journal
+    reconciliation = journal.reconcile() if config.ops.reconcile_on_start else {"checked": 0}
+    if reconciliation.get("checked"):
+        print(f"[journal] {reconciliation['summary']}", file=sys.stderr)
     providers = ProviderRegistry(config.providers, secrets, bus)
     quotas = QuotaManager(config, bus, persist_path=config.home_path / "quota.json")
+
+    billing = BillingGate(
+        config.billing.mode,
+        GatewayPolicy(
+            endpoint=config.billing.gateway_endpoint,
+            global_daily_requests=config.billing.global_daily_requests,
+            per_user_daily_requests=config.billing.per_user_daily_requests,
+            per_user_daily_tokens=config.billing.per_user_daily_tokens,
+            global_daily_spend_usd=config.billing.global_daily_spend_usd,
+            kill_switch=config.billing.kill_switch,
+            resale_acknowledged=dict(config.billing.resale_acknowledged),
+            legal_review_reference=config.billing.legal_review_reference,
+        ),
+        local_only=any("localhost" in (p.base_url or "") or "127.0.0.1" in (p.base_url or "") for p in config.providers),
+    )
     runtime = ModelRuntime(config, providers, quotas, memory, bus)
+    runtime.billing = billing  # type: ignore[attr-defined] - enforced on every model call
+
+    # Read the pinned catalogue if one is configured: model IDs go stale without a release.
+    if config.catalog.path:
+        try:
+            catalog = ModelCatalog.load(config.catalog.path)
+            key_pem = ""
+            if config.catalog.public_key_path and Path(config.catalog.public_key_path).exists():
+                key_pem = Path(config.catalog.public_key_path).read_text(encoding="utf-8")
+            hmac_key = os.environ.get(config.catalog.hmac_key_env, "") if config.catalog.hmac_key_env else ""
+            verification = catalog.verify(
+                public_key_pem=key_pem, hmac_key=hmac_key, allow_unsigned=config.catalog.allow_unsigned
+            )
+            if verification.ok:
+                catalog.apply_to_config(config)
+        except Exception as exc:  # a bad catalogue must not stop the app from starting
+            bus.emit(LOG, source="catalog", severity="warning", message=f"catalogue not applied: {exc!r}")
+
+    owner = OwnerRegistry(config.home_path, bus)
+    registry_actions.owner = owner
+    governor = ResponsivenessGovernor(bus) if config.ops.governor_enabled else None
+    # The preflight asks the governor what is busy: without that, its "machine busy" branch could
+    # only ever be reached from a test, never from a real game or call (contract 22.11).
+    preflight = Preflight(
+        bus,
+        busy_provider=(governor.busy_reason if governor is not None else None),
+        isolation_available=config.ops.isolated_session_available,
+    )
+    verifier = _build_verifier(bus, config)
+
+    supervisor = Supervisor(config.home_path, bus) if config.ops.supervisor_enabled else None
+    if supervisor is not None:
+        set_supervisor(supervisor, bus)
+        supervisor.start(reconcile=config.ops.reconcile_on_start)
+    if governor is not None and config.ops.low_priority:
+        governor.apply_priority("below_normal")
 
     plugins = PluginHost(config.home_path, registry_actions, bus, memory=memory)
     forge = Forge(plugins, runtime, registry_actions, bus, memory, workdir=config.home_path / "forge")
     if load_plugins:
         plugins.load_all()
 
-    orchestrator = Orchestrator(config, runtime, registry_actions, memory, bus)
+    orchestrator = Orchestrator(
+        config,
+        runtime,
+        registry_actions,
+        memory,
+        bus,
+        governor=governor,
+        verifier=verifier,
+        preflight=preflight,
+    )
     orchestration.set_services(orchestration.Services(orchestrator, runtime, memory, bus, config))
     if start_agents:
         orchestrator.bootstrap_roster()
@@ -93,6 +210,30 @@ def build_stack(
     voice: Any = None
     if with_voice:
         voice = VoiceSession(config.voice, bus) if config.voice.enabled else TextOnlyVoice(bus)
+
+    # The WhatsApp call path needs the config (for voice tiers) and the session's STT (so the
+    # caller's words arrive as text). Both are wired once, here, at assembly.
+    from .actions import whatsapp as whatsapp_actions
+
+    whatsapp_actions.set_config(config)
+    transcriber = getattr(voice, "transcribe_pcm", None) if voice is not None else None
+    if callable(transcriber):
+        whatsapp_actions.set_transcriber(transcriber)
+
+    # The local index (spec 14.2) has no sources until the owner adds one: indexing a user's
+    # documents without being asked is exactly the kind of helpfulness that is not helpful.
+    from .actions import localsearch as localsearch_actions
+    from .ops.index import SearchIndex
+
+    search_index = SearchIndex(config.home_path / "index.db", bus)
+    localsearch_actions.set_index(search_index)
+
+    if config.ops.sensors_enabled:
+        sensors = _build_sensors(bus, config, governor, voice)
+        from .actions import hardware as hardware_actions
+
+        hardware_actions.set_monitor(sensors)
+        sensors.start()
 
     stack = Stack(
         config=config,
@@ -106,6 +247,14 @@ def build_stack(
         forge=forge,
         orchestrator=orchestrator,
         voice=voice,
+        supervisor=supervisor,
+        owner=owner,
+        billing=billing,
+        governor=governor,
+        preflight=preflight,
+        verifier=verifier,
+        sensors=sensors,
+        index=search_index,
     )
     if with_hud:
         from .hud.service import HudService
@@ -121,22 +270,136 @@ def build_stack(
             plugins=plugins,
             voice=voice,
             static_dir=HUD_DIR,
+            supervisor=supervisor,
+            owner=owner,
+            billing=billing,
+            governor=governor,
+            verifier=verifier,
+            sensors=stack.sensors,
+            index=stack.index,
         )
         hud.forge = forge  # type: ignore[attr-defined]
         if voice is not None:
             voice.on_utterance = lambda text: hud._run_sovereign(text)  # noqa: SLF001 - single wiring point
         stack.hud = hud
+    stack.journal = journal
     return stack
 
 
-def sovereign(stack: Stack, objective: str, context: str = "") -> dict[str, Any]:
-    """Send a request to the Sovereign agent (creating one if the roster is empty)."""
+def _build_sensors(bus: EventBus, config: AppConfig, governor: Any, voice: Any) -> Any:
+    """The hardware monitor with its protective hooks wired to this app's real parts.
+
+    The monitor decides *what* a reading means; these callables decide what the app can do
+    about it. Keeping them apart is what lets a test drive a rule without a machine on fire.
+    """
+    from .ops.sensors import ProtectionPolicy, SensorMonitor
+
+    def notify(alert: Any) -> None:
+        bus.emit(
+            HUD_NOTICE,
+            source="sensors",
+            severity="warning",
+            message=f"{alert.severity.upper()}: {alert.message}",
+            alert=alert.to_json(),
+        )
+        speaker = getattr(voice, "say", None)
+        if callable(speaker) and alert.severity in ("danger", "critical"):
+            speaker(f"{alert.message}. {', '.join(alert.actions[:2])}.", block=False)
+
+    def reduce_load(alert: Any) -> None:
+        if governor is not None:
+            governor.apply_priority("below_normal")
+        bus.emit(HUD_NOTICE, source="sensors", message="background work slowed to protect the machine")
+
+    def safe_state(alert: Any) -> None:
+        bus.emit(
+            HUD_NOTICE,
+            source="sensors",
+            severity="error",
+            message=f"critical sensor state: {alert.message}; stop new work and save anything open",
+        )
+
+    def power_down(alert: Any) -> None:
+        # Only reachable when the owner turned ``allow_power_down`` on: it suspends the machine.
+        if os.name == "nt":
+            subprocess.run(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"], check=False)
+        else:
+            subprocess.run(["systemctl", "suspend"], check=False)
+
+    policy = ProtectionPolicy(
+        notify=notify,
+        reduce_load=reduce_load,
+        safe_state=safe_state,
+        power_down=power_down,
+        allow_power_down=config.ops.allow_power_down,
+    )
+    return SensorMonitor(bus=bus, policy=policy, interval=config.ops.sensor_interval)
+
+
+
+def _build_verifier(bus: EventBus, config: AppConfig) -> Any:
+    """Outcome checks whose probes are the real filesystem, not a stub.
+
+    Only criteria this machine can answer are registered. ``url_is`` and ``value_equals`` are
+    deliberately left out: a missing probe reports ``uncertain``, which is honest, whereas a
+    stub that says "looks fine" would turn a claim into a pass.
+    """
+    from .ops.languages import equivalent, normalize
+    from .ops.verification import OutcomeVerifier
+
+    verifier = OutcomeVerifier(bus)
+
+    def file_exists(criterion: Any, observations: dict[str, Any]) -> tuple[bool, str]:
+        raw = observations.get("resolved", {}).get(criterion.target, criterion.target)
+        path = Path(str(raw)).expanduser()
+        return path.exists(), f"{'found' if path.exists() else 'missing'}: {path}"
+
+    def text_present(criterion: Any, observations: dict[str, Any]) -> tuple[bool, str]:
+        raw = observations.get("resolved", {}).get(criterion.target, criterion.target)
+        path = Path(str(raw)).expanduser()
+        if not path.exists():
+            return False, f"cannot check {path}: it does not exist"
+        try:
+            body = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return False, f"cannot read {path}: {exc}"
+        needle = normalize(str(criterion.expected or ""))
+        hit = equivalent(body, body) and needle in normalize(body)
+        return hit, f"read {path}, looked for {needle!r}"
+
+    def count_at_least(criterion: Any, observations: dict[str, Any]) -> tuple[bool, str]:
+        raw = observations.get("resolved", {}).get(criterion.target, criterion.target)
+        path = Path(str(raw)).expanduser()
+        wanted = int(criterion.expected or 1)
+        if path.is_dir():
+            found = len(list(path.iterdir()))
+        elif path.exists():
+            found = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+        else:
+            return False, f"{path} does not exist"
+        return found >= wanted, f"{path}: {found} of {wanted} required"
+
+    verifier.register_probe("file_exists", file_exists)
+    verifier.register_probe("text_present", text_present)
+    verifier.register_probe("count_at_least", count_at_least)
+    return verifier
+
+
+def sovereign(stack: Stack, objective: str, context: str = "", expected_outputs: Sequence[str] = ()) -> dict[str, Any]:
+    """Send a request to the Sovereign agent (creating one if the roster is empty).
+
+    The request gets a written contract first (contract 22.4). It used to be handed straight
+    to the agent with no criteria at all, which meant the *primary* entry point skipped outcome
+    verification entirely: every step could run and nobody checked the goal.
+    """
     from .agents.orchestrator import Agent
+    from .ops.verification import contract_for_request
 
     agent = next((a for a in stack.orchestrator.agents.values() if a.identity.role == "sovereign"), None)
     if agent is None:
         agent = stack.orchestrator.spawn(role="sovereign", name="Sovereign", capabilities=["*"])
-    report = agent.run_task("user request", objective, context=context)
+    contract = contract_for_request("user request", objective, expected_outputs) if stack.verifier else None
+    report = agent.run_task("user request", objective, context=context, contract=contract)
     return report.to_json()
 
 
@@ -184,6 +447,35 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     for plugin in stack.plugins.installed():
         print(f"  {plugin['name']:<24} {plugin.get('status', 'unknown'):<10} actions={plugin.get('actions', [])}")
     print(f"\nMemory: {json.dumps(stack.memory.stats())}")
+    print("\nOperations:")
+    owner = stack.owner
+    if owner is None:
+        print("  [--] owner identity: not wired")
+    elif not owner.profile.configured:
+        print("  [!!] owner identity: NOT configured — run `orbynth owner setup`; irreversible")
+        print("       actions are refused until the owner exists")
+    else:
+        state = "session open" if owner.session_valid() else "locked"
+        print(f"  [ok] owner identity: {owner.profile.owner_name} ({owner.profile.machine_kind}, {state})")
+        if owner.foreign_profile():
+            print(f"       profile belongs to OS user {owner.profile.os_user!r} — shared PC isolation")
+    print(f"  [{'ok' if stack.supervisor else '--'}] supervisor: " + ("owning helper processes; jobs die with this app" if stack.supervisor else "disabled (config.ops.supervisor_enabled=false)"))
+    if stack.supervisor is not None:
+        inventory = stack.supervisor.inventory()
+        print(f"       journal: {inventory['journal']}  jobs now: {inventory['running']}")
+    if stack.governor is not None:
+        state = stack.governor.summary()
+        paused = state["state"]["paused"]
+        print(f"  [ok] governor: priority={state['priority']}, background paused={paused.get('background')}")
+    else:
+        print("  [--] governor: disabled")
+    issues = stack.billing.audit(config) if stack.billing is not None else []
+    blocking = [i for i in issues if i.severity == "blocking"]
+    mode = stack.billing.mode if stack.billing is not None else "n/a"
+    print(f"  [{'ok' if not blocking else '!!'}] billing: mode={mode}" + (f", {len(blocking)} blocking issue(s) — run `orbynth billing`" if blocking else ""))
+    languages = [config.voice.language, *config.voice.secondary_languages]
+    print(f"  [ok] languages: {', '.join(languages)} (OCR packs: {ocr_languages(languages)})")
+    print(f"  [ok] verification: {len(stack.verifier.probes) if stack.verifier else 0} deterministic probe(s); subjective results go to the owner")
     warnings: list[str] = []
     if not any(row["ready"] for row in providers.inventory()):
         warnings.append(
@@ -203,10 +495,40 @@ def cmd_run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     stack = build_stack(config, with_voice=args.voice)
     print(f"[{__product__}] objective: {args.objective}")
+    requirements = TaskRequirements(
+        gui=getattr(args, "needs_gui", False),
+        unlocked_session=getattr(args, "needs_gui", False),
+        user_present=getattr(args, "needs_user", False),
+        power=getattr(args, "needs_power", False),
+        network=config.safety.allow_network,
+        background_ok=True,
+    )
+    decision = stack.preflight.check(requirements, origin="user_request") if stack.preflight else None
+    if decision is not None:
+        print(f"preflight: {decision.one_line()}")
+        if not decision.can_run:
+            # Deferred, not dropped, and not faked: record why and how to make it runnable.
+            stack.memory.remember(
+                "owner",
+                f"deferred objective ({decision.action}): {args.objective[:200]} — {'; '.join(decision.reasons)}",
+                kind="deferred",
+                tags=["deferred", decision.action],
+                importance=0.6,
+            )
+            print(f"not started: {'; '.join(decision.reasons)}")
+            if decision.advice:
+                print(f"advice: {decision.advice}")
+            stack.shutdown()
+            return 3
     started = time.time()
-    result = sovereign(stack, args.objective, context=args.context or "")
+    result = sovereign(stack, args.objective, context=args.context or "", expected_outputs=tuple(args.expect or ()))
     print(f"\nstatus: {result['status']}  ({time.time() - started:.1f}s)")
     print(f"summary: {result['summary']}")
+    verdict = result.get("verdict")
+    if verdict:
+        print(f"outcome check: {verdict['status']} — {verdict['summary']}")
+        if verdict.get("question"):
+            print(f"needs you: {verdict['question']}")
     if result.get("evidence"):
         print("evidence:")
         for item in result["evidence"]:
@@ -225,15 +547,42 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_team(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     stack = build_stack(config)
-    items = json.loads(args.items) if args.items else [{"title": args.objective[:60], "objective": args.objective}]
+    raw = json.loads(args.items) if args.items else [{"title": args.objective[:60], "objective": args.objective}]
+    items = [
+        WorkItem(
+            title=i.get("title", ""),
+            objective=i.get("objective", ""),
+            role=i.get("role", "operative"),
+            capabilities=i.get("capabilities", []),
+            criteria=i.get("criteria", []) or [],
+            expected_outputs=i.get("expected_outputs", []) or [],
+            work_class=i.get("work_class", "interactive"),
+        )
+        for i in raw
+    ]
+    # How wide this host may go is reported, not assumed (contract 22.5).
+    plan = stack.orchestrator.capacity_plan(total_items=len(items))
+    print(f"capacity plan: {plan['one_line'] if 'one_line' in plan else plan}")
     result = stack.orchestrator.run_team(
         args.objective,
-        [WorkItem(title=i.get("title", ""), objective=i.get("objective", ""), role=i.get("role", "operative"), capabilities=i.get("capabilities", [])) for i in items],
-        parallel=not args.sequential,
+        items,
+        parallel=not args.sequential and bool(plan["parallel"]),
     )
-    print(json.dumps({"team": result["team"], "reports": result["reports"], "summary": result["summary"]}, indent=2))
+    verdicts = [r.get("verdict", {}).get("status") for r in result["reports"] if r.get("verdict")]
+    print(
+        json.dumps(
+            {
+                "team": result["team"],
+                "summary": result["summary"],
+                "outcome_checks": verdicts,
+                "reports": result["reports"],
+            },
+            indent=2,
+        )
+    )
+    disputed = [r for r in result["reports"] if r.get("status") == "disputed"]
     stack.shutdown()
-    return 0
+    return 0 if not disputed else 1
 
 
 def cmd_agents(args: argparse.Namespace) -> int:
@@ -487,8 +836,9 @@ def cmd_owner(args: argparse.Namespace) -> int:
         if not owner.verify_recovery(code, pin):
             print("error: recovery code rejected", file=sys.stderr)
             return 1
-        fresh = owner.rotate_recovery_code()
-        print(f"PIN replaced. New recovery code (shown once): {fresh}")
+        # verify_recovery already consumed the old code and issued the replacement;
+        # rotating again here would only throw the printed code away.
+        print(f"PIN replaced. New recovery code (shown once): {owner.last_recovery_code}")
         return 0
     if action == "rotate":
         print(owner.rotate_recovery_code())
@@ -539,6 +889,114 @@ def cmd_supervise(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_undo(args: argparse.Namespace) -> int:
+    """Journal operations: plan an undo, do it, inspect history, reconcile a crashed session."""
+    from .ops.journal import Journal
+
+    config = load_config(args.config)
+    journal = Journal(config.home_path / "journal.db")
+    try:
+        if args.reconcile:
+            report = journal.reconcile()
+        elif args.history:
+            report = {
+                "task_id": args.task,
+                "summary": f"{len(journal.history(args.task, limit=args.limit))} journaled action(s)",
+                "entries": [entry.to_json() for entry in journal.history(args.task, limit=args.limit)],
+            }
+        elif args.yes:
+            report = journal.undo_task(args.task) if args.task else journal.undo_last_task()
+        else:
+            report = journal.plan_undo(args.task, limit=args.limit)
+            report["note"] = "this is the plan; pass --yes to reverse the reversible actions"
+    finally:
+        journal.close()
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+        return 0
+    print(report.pop("summary", ""))
+    for key in ("reversible", "undone", "failed", "impossible", "refused", "needs_decision", "abandoned"):
+        for row in report.get(key) or []:
+            detail = row.get("why") or (row.get("undo") or {}).get("detail") or ""
+            print(f"  {key:<16} {str(row.get('action', row.get('entry_id', ''))):<22} {row.get('target', '')} {detail}")
+    if report.get("note"):
+        print(report["note"])
+    return 0
+
+
+def cmd_capabilities(args: argparse.Namespace) -> int:
+    """What this machine can really do, what is unproven, and what is unavailable (spec 4.7)."""
+    from .actions import build_registry
+    from .ops.capability import AuditRunStats, CapabilityMatrix, ChainedRunStats, JournalRunStats
+    from .ops.journal import Journal
+
+    config = load_config(args.config)
+    registry = build_registry(config=config)
+    sources: list[object] = []
+    journal = None
+    journal_path = config.home_path / "journal.db"
+    if journal_path.exists():
+        journal = Journal(journal_path)
+        sources.append(JournalRunStats(journal))
+    memory = None
+    try:
+        from .memory import MemoryStore
+
+        memory = MemoryStore(config.db_path)
+        sources.append(AuditRunStats(memory))
+    except Exception:
+        memory = None
+    try:
+        matrix = CapabilityMatrix(registry, stats=ChainedRunStats(tuple(sources)))
+    finally:
+        if journal is not None:
+            journal.close()
+        if memory is not None:
+            memory.close()
+    if args.tool:
+        record = matrix.record(args.tool)
+        if args.json:
+            print(json.dumps(record.to_json(), indent=2))
+        else:
+            print(f"{record.tool}: {record.status} ({record.local})")
+            print(f"  capability: {record.capability}  danger: {record.danger}")
+            print(f"  platforms:  {', '.join(record.platforms) or 'none declared'}")
+            print(f"  runs:       {record.runs} ({record.ok} ok)")
+            print(f"  verified:   {record.last_verified or 'never recorded on a real app'}")
+            print(f"  recording:  {record.recording or '-'}")
+            print(f"  limits:     {record.limits or '-'}")
+            if record.evidence_problem:
+                print(f"  evidence:   {record.evidence_problem}")
+            if not record.available_here:
+                print(f"  not here:   {record.unavailability}")
+        return 0
+
+    rows = matrix.records() if args.all else [r for r in matrix.records() if r.available_here]
+    data = matrix.to_json()
+    if args.json:
+        print(json.dumps({"summary": data["summary"], "tools": [r.to_json() for r in rows]}, indent=2))
+        return 0
+    for row in rows:
+        print(
+            f"{row.status:<11} {row.local:<15} {row.tool:<26} {row.capability:<18} "
+            f"runs={row.runs:<4} verified={row.last_verified or '-'}"
+        )
+    summary = data["summary"]
+    print()
+    print(
+        f"{summary['ready_here']} of {summary['tools']} tool(s) usable on {summary['platform']}; "
+        f"{summary['green']} green overall, {summary['provisional']} unproven, "
+        f"{summary['unavailable']} with no driver profile"
+    )
+    if not args.all:
+        print("tools this machine cannot run are hidden from agents; --all lists them")
+    for problem in summary["invalid_evidence"]:
+        print(f"[!!] unusable evidence: {problem['tool']}: {problem['problem']}")
+    for tool in summary["phantom_evidence"]:
+        print(f"[!!] recording for a tool that does not exist: {tool}")
+    return 0
+
+
 def cmd_gate(args: argparse.Namespace) -> int:
     """Run the master release gate (contract 22.3)."""
     tools_dir = Path(__file__).resolve().parent.parent / "tools"
@@ -572,7 +1030,17 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="give the Sovereign one objective")
     run.add_argument("objective")
     run.add_argument("--context", default="")
+    run.add_argument(
+        "--expect",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="a file this request promises to produce, checked against the finished state",
+    )
     run.add_argument("--voice", action="store_true", help="enable the voice session too")
+    run.add_argument("--needs-gui", action="store_true", help="the task must use the desktop")
+    run.add_argument("--needs-user", action="store_true", help="a human must be present to approve")
+    run.add_argument("--needs-power", action="store_true", help="do not run on low battery")
     run.set_defaults(func=cmd_run)
 
     team = sub.add_parser("team", help="run an objective as a team of agents")
@@ -640,6 +1108,21 @@ def build_parser() -> argparse.ArgumentParser:
     supervise.add_argument("action", choices=["status", "clean"])
     supervise.add_argument("--adopt", action="store_true", help="adopt still-running jobs instead of terminating them")
     supervise.set_defaults(func=cmd_supervise)
+
+    undo = sub.add_parser("undo", help="action journal: plan an undo, reverse the last task, inspect history (spec 4.5)")
+    undo.add_argument("--task", default="", help="task id (default: the last task that changed something)")
+    undo.add_argument("--yes", action="store_true", help="actually reverse; without it you get the plan")
+    undo.add_argument("--reconcile", action="store_true", help="report what an interrupted session left behind")
+    undo.add_argument("--history", action="store_true", help="list journaled actions")
+    undo.add_argument("--limit", type=int, default=50)
+    undo.add_argument("--json", action="store_true")
+    undo.set_defaults(func=cmd_undo)
+
+    caps = sub.add_parser("capabilities", help="what works here, what is unproven, what is unavailable (spec 4.7)")
+    caps.add_argument("--tool", default="", help="show one tool's row")
+    caps.add_argument("--all", action="store_true", help="include tools this machine cannot run")
+    caps.add_argument("--json", action="store_true")
+    caps.set_defaults(func=cmd_capabilities)
 
     gate = sub.add_parser("gate", help="master release gate: every acceptance check (contract 22.3)")
     gate.add_argument("--milestone", default="GA", help="M0..M4 or GA")

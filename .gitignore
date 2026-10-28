@@ -14,3 +14,8 @@ sidecars/whatsapp/node_modules/
 .env
 .dev.vars
 artifacts/
+
+# runtime
+preview.log
+preview.pid
+.last_gate_report.json

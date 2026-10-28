@@ -159,8 +159,16 @@ def _ocr_engine() -> Any:
         ) from exc
 
 
-def ocr_capture(capture: Capture) -> list[dict[str, Any]]:
-    """OCR a capture into ``[{text, box, confidence}]`` in *screen* coordinates."""
+def ocr_capture(capture: Capture, languages: Sequence[str] | str = ()) -> list[dict[str, Any]]:
+    """OCR a capture into ``[{text, box, confidence}]`` in *screen* coordinates.
+
+    ``languages`` is a language-code list ("ur", "ar") or a raw engine pack string. Without
+    it the engine would be left in its own default, which is where Urdu and Arabic interfaces
+    silently come back as garbage (contract 22.11).
+    """
+    from ..ops.languages import LANGUAGES, direction_of, normalize, ocr_languages
+
+    pack = languages if isinstance(languages, str) else ocr_languages(languages)
     engine, runtime = _ocr_engine()
     try:
         from PIL import Image  # type: ignore
@@ -183,7 +191,12 @@ def ocr_capture(capture: Capture) -> list[dict[str, Any]]:
             ys = [float(point[1]) for point in quad]
             items.append({"text": str(text), "box": [min(xs), min(ys), max(xs), max(ys)], "confidence": float(score)})
     else:
-        data = runtime.image_to_data(image, output_type=runtime.Output.DICT)
+        config = ""
+        if pack and pack != "eng":
+            # Tesseract takes "+"-joined ISO 639-2 codes and needs the pack installed; if it is
+            # missing the call raises, which surfaces as a DriverUnavailable instead of silence.
+            config = f"--oem 3 --psm 6 -l {pack}"
+        data = runtime.image_to_data(image, output_type=runtime.Output.DICT, config=config) if config else runtime.image_to_data(image, output_type=runtime.Output.DICT)
         for index, text in enumerate(data["text"]):
             if not str(text).strip():
                 continue
@@ -198,9 +211,14 @@ def ocr_capture(capture: Capture) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for item in items:
         box = item.get("box") or [0, 0, 0, 0]
+        raw_text = str(item.get("text", "")).strip()
+        # Persian/Arabic presentation forms and ligatures make OCR text unequal to the same
+        # text typed by the user, which then looks like a failed action. Normalise once here.
         out.append(
             {
-                "text": str(item.get("text", "")).strip(),
+                "text": raw_text,
+                "normalised": normalize(raw_text),
+                "direction": direction_of(raw_text),
                 "box": [
                     int(box[0]) + capture.origin[0],
                     int(box[1]) + capture.origin[1],
@@ -210,7 +228,12 @@ def ocr_capture(capture: Capture) -> list[dict[str, Any]]:
                 "confidence": float(item.get("confidence", 0.0) or 0.0),
             }
         )
-    return [row for row in out if row["text"]]
+    rows = [row for row in out if row["text"]]
+    from ..ops.languages import detect as detect_language
+
+    for row in rows:
+        row["language"] = detect_language(row["normalised"] or row["text"])
+    return rows
 
 
 # --------------------------------------------------------------------------------------
@@ -268,6 +291,11 @@ def vision_capture(
             "region": {"type": "array", "items": {"type": "integer"}},
             "title_contains": {"type": "string"},
             "contains": {"type": "string", "description": "Filter to lines containing this text."},
+            "languages": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Language codes for OCR, e.g. [\"ur\",\"en\"]. Defaults to the configured UI languages.",
+            },
             "max_edge": {"type": "integer"},
         },
     },
@@ -277,6 +305,7 @@ def vision_ocr(
     region: Sequence[int] | None = None,
     title_contains: str = "",
     contains: str = "",
+    languages: Sequence[str] | None = None,
     max_edge: int = 1600,
 ) -> Any:
     capture = (
@@ -284,10 +313,21 @@ def vision_ocr(
         if title_contains
         else capture_screen(tuple(region) if region else None, max_edge=max_edge)  # type: ignore[arg-type]
     )
-    lines = ocr_capture(capture)
+    codes = list(languages or [])
+    if not codes and ctx.config is not None:
+        voice = getattr(ctx.config, "voice", None)
+        codes = [getattr(voice, "language", "en"), *getattr(voice, "secondary_languages", [])]
+    lines = ocr_capture(capture, codes)
     if contains:
         lines = [line for line in lines if contains.lower() in line["text"].lower()]
-    return {"label": capture.label, "line_count": len(lines), "lines": lines}
+    rtl_lines = sum(1 for line in lines if line.get("direction") == "rtl")
+    return {
+        "label": capture.label,
+        "line_count": len(lines),
+        "languages": codes or ["en"],
+        "rtl_lines": rtl_lines,
+        "lines": lines,
+    }
 
 
 @action(

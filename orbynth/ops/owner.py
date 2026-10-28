@@ -33,22 +33,21 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ..events import EventBus, OWNER_DENIED, OWNER_SETUP, OWNER_VERIFIED
+#: Re-exported so existing importers (the action registry among them) keep naming this file,
+#: while the definition itself lives in one place -- see ``ops/risk.py``.
+from .risk import IRREVERSIBLE_CAPABILITIES
 
 PBKDF2_ROUNDS = 200_000
 RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no confusable glyphs
-#: Capabilities that always require the owner's PIN, whatever the session says.
-IRREVERSIBLE_CAPABILITIES: tuple[str, ...] = (
-    "filesystem.delete",
-    "shell.exec",
-    "office.macro",
-    "browser.eval",
-    "plugin.install",
-    "plugin.uninstall",
-    "whatsapp.call",
-    "process.kill",
-    "model.assign",
-    "memory.admin",
-)
+
+__all__ = [
+    "AuthDecision",
+    "IRREVERSIBLE_CAPABILITIES",
+    "OwnerProfile",
+    "OwnerRegistry",
+    "VoicePrint",
+    "make_recovery_code",
+]
 
 
 def _hash(secret: str, salt: bytes = b"", rounds: int = PBKDF2_ROUNDS) -> tuple[str, str]:
@@ -151,6 +150,9 @@ class OwnerRegistry:
         self.voice_matcher = voice_matcher
         self.voice_threshold = voice_threshold
         self.profile = self._load()
+        #: Set by :meth:`verify_recovery` to the freshly issued code, because a recovery code
+        #: that is never rotated is a permanent spare key.
+        self.last_recovery_code = ""
 
     # -- storage -----------------------------------------------------------------------
     @property
@@ -228,7 +230,13 @@ class OwnerRegistry:
         return ok
 
     def verify_recovery(self, code: str, new_pin: str) -> bool:
-        """Recover from a lost PIN. Consumes the recovery code and issues a fresh one."""
+        """Recover from a lost PIN. Consumes the recovery code and issues a fresh one.
+
+        The rotation happens *here*, not in the caller. It used to live in the CLI command,
+        which meant every other caller -- the HUD, a scheduled task, an embedded library user
+        -- left the code it had just used valid forever. A recovery code that survives its own
+        use is a permanent spare key lying in whatever notebook it was written in.
+        """
         if not self.profile.configured or self.locked_out():
             return False
         normalized = code.strip().upper()
@@ -240,6 +248,7 @@ class OwnerRegistry:
         self.profile.failed_attempts = 0
         self.profile.locked_until = 0.0
         self.enroll_pin(new_pin)
+        self.last_recovery_code = self.rotate_recovery_code()
         self._open_session("recovery")
         return True
 
@@ -279,6 +288,7 @@ class OwnerRegistry:
         if ok:
             self.profile.failed_attempts = 0
             self.profile.last_verified_at = time.time()
+            self.save()
             self.bus.emit(OWNER_VERIFIED, source="owner", owner=self.profile.owner_name)
             return
         self.profile.failed_attempts += 1
@@ -316,6 +326,7 @@ class OwnerRegistry:
     @staticmethod
     def risk_of(capability: str) -> str:
         return "irreversible" if capability in IRREVERSIBLE_CAPABILITIES else "normal"
+
 
     def require(self, capabilities: Iterable[str], method: str = "") -> AuthDecision:
         """Decide whether the owner's authorisation is present for these capabilities.

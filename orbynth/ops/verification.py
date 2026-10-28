@@ -33,6 +33,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
 from ..events import EventBus, TASK_DISPUTED, TASK_VERIFIED
+from .risk import IRREVERSIBLE_CAPABILITIES
 
 HARMLESS = "harmless"
 LOW = "low"
@@ -46,18 +47,8 @@ IMMEDIATE = "immediate"
 NEVER_SHORTCUT = "never_shortcut"
 
 #: Capabilities whose effects cannot be undone by ORBYNTH, whatever the action claims.
-IRREVERSIBLE_CAPABILITIES: frozenset[str] = frozenset(
-    {
-        "filesystem.delete",
-        "office.macro",
-        "browser.eval",
-        "shell.exec",
-        "plugin.install",
-        "plugin.uninstall",
-        "whatsapp.call",
-        "process.kill",
-    }
-)
+#: Imported from ``ops/risk.py``: the same list the owner gate demands a PIN for, so the
+#: verification tier and the authorisation gate can never disagree about what is dangerous.
 
 #: Actions that are pure observation: cheap to batch and never worth waiting on.
 OBSERVATION_GROUPS: frozenset[str] = frozenset({"vision", "windows", "memory", "orchestration", "hud"})
@@ -222,6 +213,49 @@ class TaskContract:
         }
 
 
+#: Phrases in a request that imply the capabilities it obviously expects to touch.
+#: Deliberately narrow: an over-broad inference would mark every capability "intended" and
+#: make the side-effect check meaningless, which is worse than not checking at all.
+REQUEST_CAPABILITY_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("delete", "remove", "erase", "uninstall", "trash", "clean up"), "filesystem.delete"),
+    (("write", "create", "save", "export", "rename", "zip", "extract", "edit", "append"), "filesystem.write"),
+    (("read", "open", "inspect", "list", "summarise", "summarize", "check", "verify", "find"), "filesystem.read"),
+    (("type", "click", "press", "keyboard", "mouse", "focus", "scroll"), "input.control"),
+    (("browse", "tab", "website", "web page", "url", "portal", "form", "log in", "login"), "browser.*"),
+    (("word", "excel", "spreadsheet", "office", "powerpoint", "presentation", "access"), "office.*"),
+    (("whatsapp", "message", "chat", "voice note", "call"), "whatsapp.*"),
+    (("email", "gmail", "mail", "http", "api"), "network.http"),
+    (("shell", "command line", "terminal", "script"), "shell.exec"),
+)
+
+
+def capabilities_from_request(text: str) -> tuple[str, ...]:
+    """What a request in plain words expects to touch, for the side-effect check.
+
+    Without this a contract built from a user objective has no intended capabilities at all,
+    and ``detect_side_effects`` can judge nothing -- every destructive extra would pass.
+    """
+    lowered = text.lower()
+    found: list[str] = []
+    for words, capability in REQUEST_CAPABILITY_HINTS:
+        if any(word in lowered for word in words):
+            found.append(capability)
+    return tuple(found)
+
+
+def contract_for_request(task_id: str, request: str, expected_outputs: Sequence[str] = ()) -> TaskContract:
+    """Write the contract before the work starts. Criteria may legitimately be empty.
+
+    An empty criterion list is not a failure: the verifier reports ``uncertain`` rather than
+    certifying the work, criteria derived from what the task actually did are added later, and
+    anything only a human can judge is asked as a question.
+    """
+    contract = TaskContract(task_id=task_id, request=request, intended_capabilities=capabilities_from_request(request))
+    for output in expected_outputs:
+        contract.add(FILE_EXISTS, target=str(output), note="output the request promised")
+    return contract
+
+
 @dataclass
 class CriterionResult:
     criterion: SuccessCriterion
@@ -305,7 +339,12 @@ class OutcomeVerifier:
         unsure = [r for r in results if r.status == UNCERTAIN]
         subjective = [r for r in results if r.status == NEEDS_USER]
 
-        if failed:
+        if not results:
+            # A contract with nothing to check cannot be "met". The first version fell through
+            # to MET here, so a task with no success criteria was silently certified as
+            # complete -- the exact hole this module exists to close.
+            status = UNCERTAIN
+        elif failed:
             status = NOT_MET
         elif subjective:
             status = NEEDS_USER
@@ -326,10 +365,18 @@ class OutcomeVerifier:
             )
 
         unmet = ", ".join(c.criterion.target or c.criterion.kind for c in failed) or "none"
-        summary = (
-            f"{len(results) - len(failed)}/{len(results)} criteria met (unmet: {unmet}); "
-            f"{len(side_effects)} unintended side effect(s); claim was: {claim[:200] or 'not stated'}"
-        )
+        if results:
+            criteria_line = f"{len(results) - len(failed)}/{len(results)} criteria met (unmet: {unmet})"
+        else:
+            criteria_line = "no checkable success criteria were written for this task"
+        # "0 side effects" must not read as "we looked and found none" when the contract
+        # declared no capabilities at all: then nothing can be judged, and saying so is the
+        # difference between an honest verdict and a reassuring one.
+        if contract.intended_capabilities:
+            side_line = f"{len(side_effects)} unintended side effect(s)"
+        else:
+            side_line = f"side effects not judged ({len(side_effects)} recorded: the contract declared no capabilities)"
+        summary = f"{criteria_line}; {side_line}; claim was: {claim[:200] or 'not stated'}"
         verdict = Verdict(contract.task_id, status, results, side_effects, question, summary)
         self.bus.emit(
             TASK_VERIFIED if status == MET else TASK_DISPUTED,

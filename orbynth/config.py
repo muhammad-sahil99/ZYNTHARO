@@ -43,6 +43,8 @@ CAPABILITIES: tuple[str, ...] = (
     "shell.exec",
     "process.list",
     "process.kill",
+    "hardware.read",
+    "hardware.tune",
     "network.http",
     "browser.navigate",
     "browser.tabs",
@@ -215,6 +217,11 @@ class VoiceConfig:
     tts_voice: str = "en-US-AriaNeural"
     barge_in: bool = True
     vad_silence_ms: int = 700
+    #: Primary language for speech recognition and synthesis ("en", "ur", "ar", ...).
+    #: Hard-coding English here made the language layer unreachable, so it is configuration.
+    language: str = "en"
+    #: Extra languages the user speaks or reads; OCR packs and hints are derived from both.
+    secondary_languages: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -227,6 +234,56 @@ class HudConfig:
     start_voice_muted: bool = False
     chat_input_visible: bool = False  # voice-first by default; toggled from the menu
     webview: bool = True
+
+
+@dataclass(slots=True)
+class BillingConfig:
+    """Who pays for model calls (contract 22.6). BYOK is the default and spends nothing."""
+
+    mode: str = "byok"  # byok | gateway | local_only
+    gateway_endpoint: str = ""
+    legal_review_reference: str = ""
+    per_user_daily_requests: int = 200
+    per_user_daily_tokens: int = 2_000_000
+    global_daily_requests: int = 5_000
+    global_daily_spend_usd: float = 50.0
+    kill_switch: bool = False
+    resale_acknowledged: dict[str, bool] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class CatalogConfig:
+    """Signed model catalogue settings (contract 22.10)."""
+
+    path: str = ""  # the catalogue file applied last
+    public_key_path: str = ""  # pinned Ed25519 public key (PEM); HMAC is development-only
+    hmac_key_env: str = "ORBYNTH_CATALOG_HMAC"
+    allow_unsigned: bool = False
+    drift_check_hours: int = 24
+
+
+@dataclass(slots=True)
+class OpsConfig:
+    """Operational switches: owner gate, supervisor, governor, languages."""
+
+    require_owner_for_irreversible: bool = True
+    supervisor_enabled: bool = True
+    reconcile_on_start: bool = True
+    governor_enabled: bool = True
+    low_priority: bool = True
+    #: Maximum a single agent step may be delayed by the responsiveness governor.
+    governor_max_defer_s: int = 90
+    #: An isolated session/VM is available for unattended GUI work. Off by default: with no
+    #: such thing configured, the honest answer to "run this at 3am with the screen locked" is
+    #: to defer, and the preflight says so instead of pretending it ran (contract 22.2).
+    isolated_session_available: bool = False
+    #: Hardware sensing (spec 16). The collector runs on its own low-priority thread and its
+    #: own cost is measured; the rules are deterministic and never call a model.
+    sensors_enabled: bool = True
+    sensor_interval: float = 1.0
+    #: Hibernating or powering the machine down on a critical alert is off unless the owner
+    #: turns it on: an assistant that can shut down the computer is a different risk class.
+    allow_power_down: bool = False
 
 
 @dataclass(slots=True)
@@ -257,6 +314,9 @@ class AppConfig:
     voice: VoiceConfig = field(default_factory=VoiceConfig)
     hud: HudConfig = field(default_factory=HudConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
+    billing: BillingConfig = field(default_factory=BillingConfig)
+    catalog: CatalogConfig = field(default_factory=CatalogConfig)
+    ops: OpsConfig = field(default_factory=OpsConfig)
     default_team_size: int = 2
 
     # -- persistence -------------------------------------------------------------------
@@ -280,6 +340,9 @@ class AppConfig:
             "voice": asdict(self.voice),
             "hud": asdict(self.hud),
             "safety": asdict(self.safety),
+            "billing": asdict(self.billing),
+            "catalog": asdict(self.catalog),
+            "ops": asdict(self.ops),
             "default_team_size": self.default_team_size,
         }
 
@@ -299,6 +362,9 @@ class AppConfig:
             cfg.safety = SafetyConfig(
                 **{k: v for k, v in data["safety"].items() if k in SafetyConfig.__dataclass_fields__}
             )
+        for name, cls in (("billing", BillingConfig), ("catalog", CatalogConfig), ("ops", OpsConfig)):
+            if name in data and isinstance(data[name], dict):
+                setattr(cfg, name, cls(**{k: v for k, v in data[name].items() if k in cls.__dataclass_fields__}))
         return cfg
 
     def save(self) -> Path:

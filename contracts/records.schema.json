@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbynth.local/contracts/records.schema.json",
+  "title": "ORBYNTH record contracts",
+  "description": "The records ORBYNTH writes about itself: what it intended, what it did, what proved it, and what it was asked for. This file is the contract; orbynth/ops/* and orbynth/memory.py are the implementations, and tests/test_contracts.py validates real objects produced by the running system against these definitions. Change a schema and you have changed the format stored on disk, so the change also needs a version bump in contracts/versions.json and a migration note.",
+  "$defs": {
+    "receipt": {
+      "title": "Evidence receipt (spec 4.2)",
+      "description": "One executed tool call, with the observation channel that confirmed it and an outcome that is never upgraded to success downstream.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "tool", "outcome", "rung", "started_at"],
+      "properties": {
+        "receipt_id": {"type": "string", "minLength": 4, "maxLength": 64},
+        "tool": {"type": "string", "minLength": 1, "maxLength": 120},
+        "agent_id": {"type": "string", "maxLength": 120},
+        "capability": {"type": "string", "maxLength": 120},
+        "group": {"type": "string", "maxLength": 60},
+        "risk_tier": {"type": "string", "enum": ["harmless", "low", "moderate", "irreversible", ""]},
+        "args": {"type": "object"},
+        "target": {"type": "string", "maxLength": 400},
+        "rung": {"type": "integer", "minimum": 1, "maximum": 5},
+        "rung_name": {"type": "string", "enum": ["api", "accessibility", "structured-ui", "vision", "coordinates"]},
+        "method": {"type": "string", "maxLength": 300},
+        "channels": {"type": "array", "items": {"type": "string", "maxLength": 80}, "maxItems": 12},
+        "started_at": {"type": "number", "minimum": 0},
+        "ended_at": {"type": "number", "minimum": 0},
+        "duration": {"type": "number", "minimum": 0},
+        "state_before": {"type": "object"},
+        "state_after": {"type": "object"},
+        "outcome": {"type": "string", "enum": ["VERIFIED", "UNVERIFIED", "FAILED"]},
+        "verified": {"type": "boolean"},
+        "error": {"type": "string", "maxLength": 2000},
+        "output_digest": {"type": "string", "maxLength": 64},
+        "task_id": {"type": "string", "maxLength": 120},
+        "idempotency_key": {"type": "string", "maxLength": 200},
+        "notes": {"type": "string", "maxLength": 2000}
+      }
+    },
+    "journal-entry": {
+      "title": "Action journal entry (spec 4.5)",
+      "description": "A write-ahead log entry. `state` is `intended` before the side effect and `running` after it starts; a crash leaves one of those open on purpose so reconciliation can find it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry_id", "action", "state", "started_at"],
+      "properties": {
+        "entry_id": {"type": "integer", "minimum": 1},
+        "task_id": {"type": "string", "maxLength": 120},
+        "agent_id": {"type": "string", "maxLength": 120},
+        "action": {"type": "string", "minLength": 1, "maxLength": 120},
+        "capability": {"type": "string", "maxLength": 120},
+        "target": {"type": "string", "maxLength": 400},
+        "risk": {"type": "integer", "minimum": 0, "maximum": 3},
+        "mode": {"type": "string", "enum": ["background", "isolated", "direct", ""]},
+        "reversible": {"type": "boolean"},
+        "idempotency_key": {"type": "string", "maxLength": 200},
+        "state": {"type": "string", "enum": ["intended", "running", "committed", "failed", "abandoned", "rejected"]},
+        "outcome": {},
+        "error": {"type": "string", "maxLength": 2000},
+        "notes": {"type": "string", "maxLength": 2000},
+        "started_at": {"type": "number", "minimum": 0},
+        "ended_at": {"type": ["number", "null"], "minimum": 0},
+        "evidence": {"type": "object"}
+      }
+    },
+    "criterion": {
+      "title": "Success criterion (spec 4.8)",
+      "description": "One checkable statement about the finished state. `subjective` is a real kind: it goes to the user instead of being guessed at.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"type": "string", "minLength": 1, "maxLength": 40},
+        "target": {"type": "string", "maxLength": 400},
+        "expected": {},
+        "note": {"type": "string", "maxLength": 500},
+        "weight": {"type": "number", "minimum": 0}
+      }
+    },
+    "task-contract": {
+      "title": "Task contract (spec 4.8)",
+      "description": "Written before the task starts: the request in the user's words plus the criteria the finished state has to meet. A task is only reported done on GOAL_MET against this.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "request", "criteria", "created_at"],
+      "properties": {
+        "task_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "request": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "criteria": {"type": "array", "items": {"$ref": "#/$defs/criterion"}, "maxItems": 40},
+        "intended_capabilities": {"type": "array", "items": {"type": "string", "maxLength": 120}, "maxItems": 40},
+        "requested_by": {"type": "string", "maxLength": 60},
+        "created_at": {"type": "number", "minimum": 0}
+      }
+    },
+    "event": {
+      "title": "Bus event (spec 3.6)",
+      "description": "One typed event on the Visual State Bus. `payload` carries the topic-specific fields, so it is deliberately open; the topic and severity are not.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topic", "severity", "ts", "id"],
+      "properties": {
+        "topic": {"type": "string", "minLength": 3, "maxLength": 120, "pattern": "^[a-z][a-z0-9._]*$"},
+        "payload": {"type": "object"},
+        "source": {"type": "string", "maxLength": 120},
+        "severity": {"type": "string", "enum": ["debug", "info", "notice", "warning", "error", "critical"]},
+        "ts": {"type": "number", "minimum": 0},
+        "ts_iso": {"type": "string", "maxLength": 40},
+        "id": {"type": "string", "minLength": 4, "maxLength": 40}
+      }
+    },
+    "tool": {
+      "title": "Tool catalog entry (spec 3.4)",
+      "description": "A declared capability as it is handed to a model. The parameters are themselves a JSON Schema, so a call is validated before it reaches a driver.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "capability", "parameters", "danger", "group"],
+      "properties": {
+        "name": {"type": "string", "minLength": 2, "maxLength": 80, "pattern": "^[a-z][a-z0-9_]*$"},
+        "description": {"type": "string", "minLength": 3, "maxLength": 2000},
+        "capability": {"type": "string", "minLength": 3, "maxLength": 120},
+        "parameters": {"type": "object"},
+        "requires_confirm": {"type": "boolean"},
+        "danger": {"type": "string", "enum": ["low", "medium", "high"]},
+        "group": {"type": "string", "minLength": 2, "maxLength": 60},
+        "risk_tier": {"type": "string", "enum": ["harmless", "low", "moderate", "irreversible"]}
+      }
+    },
+    "scene": {
+      "title": "HUD scene request (spec 3.6, 17)",
+      "description": "A request to open something in the interface: a window, an explanation, a 3D view. The payload is open because the renderer owns those shapes; `kind` is what the interface routes on.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"type": "string", "minLength": 2, "maxLength": 60},
+        "title": {"type": "string", "maxLength": 200},
+        "payload": {"type": "object"}
+      }
+    },
+    "memory-record": {
+      "title": "Memory record (spec 3.4, memory format)",
+      "description": "What an agent remembers. `kind` separates a fact from an episode so recall can weight them differently.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_id", "kind", "text", "ts"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 1},
+        "agent_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "kind": {"type": "string", "minLength": 2, "maxLength": 40},
+        "text": {"type": "string", "minLength": 1, "maxLength": 20000},
+        "tags": {"type": "array", "items": {"type": "string", "maxLength": 60}, "maxItems": 40},
+        "importance": {"type": "number", "minimum": 0, "maximum": 1},
+        "ts": {"type": "number", "minimum": 0},
+        "age_s": {"type": "number", "minimum": 0},
+        "score": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}

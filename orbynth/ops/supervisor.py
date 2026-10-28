@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from ..events import (
+    LOG,
     EventBus,
     JOB_EXITED,
     JOB_ORPHANED,
@@ -78,6 +79,11 @@ class Job:
 
     def to_json(self) -> dict[str, Any]:
         data = asdict(self)
+        # The journal is a plain-text file in the user's profile, and a helper's environment can
+        # carry a provider API key. Record *which* variables were set, never their values: a
+        # supervisor journal is not the place a secret should end up because a sidecar needed it.
+        data["env_keys"] = sorted(self.env)
+        data.pop("env", None)
         data["alive"] = _pid_alive(self.pid)
         data["age_s"] = round(time.time() - self.started_at, 1)
         return data
@@ -231,6 +237,7 @@ class Supervisor:
         orphaned: list[dict[str, Any]] = []
         terminated: list[dict[str, Any]] = []
         cleaned: list[str] = []
+        adopted_ids: set[str] = set()
         entries = self._load_journal()
         journal_run_id = ""
         if self.journal_path.exists():
@@ -253,18 +260,28 @@ class Supervisor:
                 orphaned.append({"job_id": entry.get("job_id"), "name": entry.get("name"), "pid": pid, "reason": "pid reused by another process"})
                 continue
             if self.adopt_orphans:
-                self._adopt(entry)
+                adopted = self._adopt(entry)
+                adopted_ids.add(adopted.job_id)
                 continue
             _terminate_tree(pid, int(entry.get("pgid") or 0), force=True)
             terminated.append({"job_id": entry.get("job_id"), "name": entry.get("name"), "pid": pid, "reason": "left running by a previous supervisor"})
+        # Temporary workspaces belong to jobs that no longer run: the process is gone (orphaned)
+        # or we just killed it (terminated). A job we adopted is still live and keeps its
+        # workspace. The first version cleaned only the terminated ones, which skipped exactly
+        # the interrupted case -- a crashed run's scratch directories accumulated forever.
         for entry in entries:
-            ws = entry.get("workspace") or ""
-            if ws and entry.get("job_id") not in {j.get("job_id") for j in terminated}:
+            job_id = str(entry.get("job_id") or "")
+            if job_id in adopted_ids:
                 continue
+            ws = entry.get("workspace") or ""
             if ws and Path(ws).exists() and Path(ws).is_dir():
                 _rmtree_quiet(Path(ws))
                 cleaned.append(ws)
-        self.jobs.clear()
+        # Drop what is no longer alive; keep adopted jobs and anything this run still owns.
+        for job_id, job in list(self.jobs.items()):
+            if job.status != RUNNING or not _pid_alive(job.pid):
+                self.jobs.pop(job_id, None)
+                self._procs.pop(job_id, None)
         self._save()
         report = {
             "checked": len(entries),
@@ -276,7 +293,7 @@ class Supervisor:
         self.bus.emit(SUPERVISOR_RECONCILED, source="supervisor", severity="notice" if (orphaned or terminated) else "info", **report)
         return report
 
-    def _adopt(self, entry: dict[str, Any]) -> None:
+    def _adopt(self, entry: dict[str, Any]) -> Job:
         job = Job(
             job_id=entry.get("job_id") or uuid.uuid4().hex[:10],
             name=entry.get("name", "adopted"),
@@ -292,6 +309,7 @@ class Supervisor:
             start_token=entry.get("start_token", ""),
         )
         self.jobs[job.job_id] = job
+        return job
 
     # -- launching ---------------------------------------------------------------------
     def spawn(
@@ -306,11 +324,16 @@ class Supervisor:
         env: dict[str, str] | None = None,
         workspace: str | os.PathLike[str] | None = None,
         log_name: str = "",
+        pipes: bool = False,
     ) -> Job:
         """Start a child process and take responsibility for it.
 
         ``argv`` is a list, never a shell string: a task the AI composed must not be able to
         smuggle shell metacharacters through the supervisor.
+
+        ``pipes=True`` keeps stdin/stdout/stderr with the caller instead of redirecting them to
+        a log file. A JSON-RPC sidecar needs that; a helper does not, and a helper whose output
+        goes to a log can be diagnosed after it dies.
         """
         if not argv:
             raise ValueError("spawn needs a command")
@@ -318,7 +341,7 @@ class Supervisor:
         log_dir = self.home / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / f"{log_name or job_id}.log"
-        handle = open(log_path, "ab", buffering=0)
+        handle = None if pipes else open(log_path, "ab", buffering=0)
         creation: dict[str, Any] = {}
         if os.name == "nt":  # pragma: no cover - windows only
             creation["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -326,18 +349,22 @@ class Supervisor:
             creation["start_new_session"] = True
         workdir = str(workspace or cwd or Path.cwd())
         Path(workdir).mkdir(parents=True, exist_ok=True)
+        stdio: dict[str, Any] = (
+            {"stdin": subprocess.PIPE, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "bufsize": 0}
+            if pipes
+            else {"stdin": subprocess.DEVNULL, "stdout": handle, "stderr": subprocess.STDOUT}
+        )
         try:
             proc = subprocess.Popen(
                 list(argv),
                 cwd=workdir,
                 env={**os.environ, **(env or {})},
-                stdin=subprocess.DEVNULL,
-                stdout=handle,
-                stderr=subprocess.STDOUT,
+                **stdio,
                 **creation,
             )
         finally:
-            handle.close()
+            if handle is not None:
+                handle.close()
         pgid = proc.pid
         if not os.name == "nt":
             try:
@@ -373,7 +400,7 @@ class Supervisor:
             try:
                 self.poll()
             except Exception as exc:  # a watcher must never die of a hiccup
-                self.bus.emit("system.log", source="supervisor", severity="error", message=f"watcher poll failed: {exc!r}")
+                self.bus.emit(LOG, source="supervisor", severity="error", message=f"watcher poll failed: {exc!r}")
 
     def poll(self) -> list[dict[str, Any]]:
         """Check every managed job; restart the ones whose policy says to.
@@ -460,7 +487,7 @@ class Supervisor:
             finally:
                 handle.close()
         except (OSError, ValueError) as exc:
-            self.bus.emit("system.log", source="supervisor", severity="error", message=f"restart of {job.name} failed: {exc!r}")
+            self.bus.emit(LOG, source="supervisor", severity="error", message=f"restart of {job.name} failed: {exc!r}")
             return False
         job.pid = proc.pid
         job.pgid = proc.pid
@@ -521,6 +548,10 @@ class Supervisor:
         self._save()
         self.bus.emit(SUPERVISOR_STOPPED, source="supervisor", stopped=[j.name for j in owned], forced=survivors)
         return {"stopped": [j.name for j in owned], "forced": survivors, "left_running": [j.name for j in self.jobs.values() if j.owned and _pid_alive(j.pid)]}
+
+    def process(self, job_id: str) -> subprocess.Popen | None:
+        """The Popen handle for a job, for piped helpers that need to talk over stdio."""
+        return self._procs.get(job_id)
 
     # -- introspection -----------------------------------------------------------------
     def inventory(self) -> dict[str, Any]:

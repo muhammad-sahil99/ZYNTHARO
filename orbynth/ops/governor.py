@@ -13,7 +13,11 @@ clever its plan was. Two mechanisms:
 
 Detection is driver-dependent and therefore honest: the detectors here report what they can
 see and say "unknown" otherwise. Everything is injectable so the policy can be tested
-without a desktop.
+without a desktop -- **including the load reading**. That last one is not a nicety: the load
+used to be read straight from the host inside :meth:`ResponsivenessGovernor.evaluate`, so a
+test that injected its own busy signals still paused background work whenever the machine
+running the tests happened to be loaded, and the release gate failed on a busy CI box for
+reasons that had nothing to do with the code.
 """
 
 from __future__ import annotations
@@ -74,31 +78,66 @@ class GovernorState:
         }
 
 
+def machine_load() -> float:
+    """Load average per CPU, or 0.0 where the OS has no such reading (notably Windows).
+
+    Injectable so tests and simulations are deterministic instead of inheriting whatever the
+    host is doing at the time.
+    """
+    try:
+        load = os.getloadavg()[0]
+    except (OSError, AttributeError):
+        return 0.0
+    return load / (os.cpu_count() or 1)
+
+
+def _windows_process_names() -> set[str]:  # pragma: no cover - windows only
+    """Image names of running processes, for matching against the known-game/call lists.
+
+    The previous Windows branch enumerated every pid and then threw the list away without ever
+    asking for a single name, so ``KNOWN_GAMES`` and ``KNOWN_CALLS`` could never match on the
+    one platform this product is mainly built for: games and calls went undetected and ORBYNTH
+    happily worked through them.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    psapi = ctypes.windll.psapi  # type: ignore[attr-defined]
+    process_query_limited_information = 0x1000
+    buf = (wintypes.DWORD * 4096)()
+    needed = wintypes.DWORD()
+    if not psapi.EnumProcesses(ctypes.byref(buf), ctypes.sizeof(buf), ctypes.byref(needed)):
+        return set()
+    names: set[str] = set()
+    size = wintypes.DWORD(1024)
+    path = ctypes.create_unicode_buffer(1024)
+    for index in range(needed.value // ctypes.sizeof(wintypes.DWORD)):
+        pid = int(buf[index])
+        if pid <= 0:
+            continue
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if not handle:
+            continue
+        try:
+            if kernel32.QueryFullProcessImageNameW(handle, 0, path, ctypes.byref(size)):
+                names.add(path.value.rsplit("\\", 1)[-1].lower())
+        finally:
+            kernel32.CloseHandle(handle)
+        size.value = 1024
+    return names
+
+
 def detect_busy() -> list[BusySignal]:
     """Best-effort, read-only probe. Reports nothing rather than inventing a signal."""
     signals: list[BusySignal] = []
     try:  # pragma: no cover - depends on the platform's process listing
-        names: set[str] = set()
         if os.name == "nt":
-            import ctypes
-
-            psapi = ctypes.windll.psapi  # type: ignore[attr-defined]
-            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-            handle = kernel32.GetCurrentProcess()
-            count = 1024
-            buf = (ctypes.c_ulong * count)()
-            needed = ctypes.c_ulong()
-            if psapi.EnumProcesses(ctypes.byref(buf), ctypes.sizeof(buf), ctypes.byref(needed)):
-                for pid in buf[: needed.value // ctypes.sizeof(ctypes.c_ulong)]:
-                    if not pid:
-                        continue
-                    proc = kernel32.OpenProcess(0x1000, False, pid)
-                    if proc:
-                        kernel32.CloseHandle(proc)
-            names = set()
+            names = _windows_process_names()
         else:
             import glob
 
+            names = set()
             for path in glob.glob("/proc/[0-9]*/comm"):
                 try:
                     names.add(open(path, "r", encoding="utf-8", errors="replace").read().strip().lower())
@@ -111,26 +150,49 @@ def detect_busy() -> list[BusySignal]:
                 signals.append(BusySignal(VIDEO_CALL, name, 0.4))
     except Exception:
         return signals
-    load = os.getloadavg()[0] if hasattr(os, "getloadavg") else 0.0
-    cpus = os.cpu_count() or 1
-    if load / cpus > 0.85:
-        signals.append(BusySignal(HEAVY_LOAD, f"load {load:.1f} on {cpus} cpus", 0.8))
+    load_per_cpu = machine_load()
+    if load_per_cpu > 0.85:
+        cpus = os.cpu_count() or 1
+        signals.append(BusySignal(HEAVY_LOAD, f"load {load_per_cpu * cpus:.1f} on {cpus} cpus", 0.8))
     return signals
 
 
 class ResponsivenessGovernor:
     """Decides what may run while the machine is busy, and how politely."""
 
-    def __init__(self, bus: EventBus | None = None, detector: Callable[[], list[BusySignal]] | None = None, load_ceiling: float = 0.85):
+    def __init__(
+        self,
+        bus: EventBus | None = None,
+        detector: Callable[[], list[BusySignal]] | None = None,
+        load_ceiling: float = 0.85,
+        load_provider: Callable[[], float] | None = None,
+    ):
         self.bus = bus or EventBus()
         self.detector = detector or detect_busy
+        #: Load per CPU. Injected in tests so policy is decided by the signals under test,
+        #: never by how busy the machine running the tests happens to be.
+        self.load_provider = load_provider or machine_load
         self.load_ceiling = load_ceiling
         self._paused = False
         self._priority = PRIORITY_NORMAL
 
+    def busy_reason(self) -> str:
+        """What is keeping this machine busy, as one line, or "" when it is free.
+
+        ``ops/preflight.py`` asks this before a task starts so a game, call or presentation
+        defers desktop work or routes it down the headless path. Without a caller the busy
+        branch of that decision was unreachable in production.
+        """
+        state = self.evaluate()
+        kinds = sorted({signal.kind for signal in state.signals})
+        return ", ".join(kinds)
+
     def evaluate(self, signals: Sequence[BusySignal] | None = None) -> GovernorState:
         signals = list(signals if signals is not None else self.detector())
-        load = os.getloadavg()[0] / (os.cpu_count() or 1) if hasattr(os, "getloadavg") else 0.0
+        try:
+            load = float(self.load_provider())
+        except Exception:
+            load = 0.0  # an unreadable load reading must not stop a task from running
         kinds = {s.kind for s in signals}
         paused = {
             BACKGROUND: bool(kinds & {GAME, VIDEO_CALL, PRESENTATION, FULLSCREEN}) or load > self.load_ceiling,
@@ -172,25 +234,29 @@ class ResponsivenessGovernor:
                 return 1.0
         return 0.0
 
+    #: Absolute nice values. ``os.nice()`` is relative, which is what made the old version
+    #: wrong: calling it twice with 10 reached nice 20, so "below normal" quietly became "as
+    #: low as the OS allows" and there was no way back without privileges.
+    _NICE = {PRIORITY_IDLE: 19, PRIORITY_BELOW: 10, PRIORITY_NORMAL: 0}
+    _WINDOWS_CLASS = {PRIORITY_IDLE: 0x00000040, PRIORITY_BELOW: 0x00004000, PRIORITY_NORMAL: 0x00000020}
+
     def apply_priority(self, level: str = PRIORITY_BELOW) -> str:
-        """Move this process below interactive work. Reversible, and never a crash risk."""
+        """Move this process below interactive work. Absolute, idempotent, never a crash risk."""
         self._priority = level
-        if level == PRIORITY_NORMAL:
-            return level
         try:
             if os.name == "nt":  # pragma: no cover - windows only
                 import ctypes
 
-                # BELOW_NORMAL_PRIORITY_CLASS = 0x00004000, IDLE = 0x00000040
-                value = 0x00000040 if level == PRIORITY_IDLE else 0x00004000
+                value = self._WINDOWS_CLASS.get(level, 0x00004000)
                 ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), value)  # type: ignore[attr-defined]
-                return level
-            os.nice(19 if level == PRIORITY_IDLE else 10)
-            return level
-        except (OSError, AttributeError):
-            # Being unable to lower priority is not fatal; say so instead of pretending.
+            else:
+                os.setpriority(os.PRIO_PROCESS, 0, self._NICE.get(level, 10))
+        except (OSError, AttributeError, ValueError):
+            # Being unable to *lower* priority (or raise it back without privileges) is not
+            # fatal. Say so instead of pretending it worked.
             self._priority = PRIORITY_NORMAL
             return PRIORITY_NORMAL
+        return level
 
     def summary(self) -> dict[str, Any]:
         state = self.evaluate()

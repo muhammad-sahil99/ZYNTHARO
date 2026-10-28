@@ -25,10 +25,12 @@ that is what it says.
 from __future__ import annotations
 
 import os
+import socket
+import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..events import EventBus, TASK_PREFLIGHT
 
@@ -58,6 +60,13 @@ class TaskRequirements:
         return dict(self.__dict__)
 
 
+#: Machine probes cost a subprocess (``xprintidle``) or a syscall sweep on some platforms, so a
+#: reading is reused for a couple of seconds. ORBYNTH is supposed to be light on the machine it
+#: is watching; re-probing the desktop on every HUD frame would be a small betrayal of that.
+_DETECT_TTL = 2.0
+_detect_cache: tuple[float, "MachineState"] | None = None
+
+
 @dataclass
 class MachineState:
     """A snapshot of what the machine can currently be asked to do."""
@@ -76,18 +85,39 @@ class MachineState:
 
     @property
     def user_active(self) -> bool:
-        """Is a human using this machine right now?"""
-        return self.idle_seconds < 120 and not self.session_locked
+        """Is a human using this machine right now?
+
+        A headless process (a service, an SSH session, a scheduled job on a server) has no
+        desktop to be present at, so it counts as "nobody there" however fresh the input
+        timestamp looks. Treating it otherwise made the unattended path unreachable on exactly
+        the machines unattended work runs on.
+        """
+        if self.headless_process or self.session_locked:
+            return False
+        return self.idle_seconds < 120
 
     def to_json(self) -> dict[str, Any]:
         return {**self.__dict__, "user_active": self.user_active}
 
     @classmethod
-    def detect(cls) -> "MachineState":
+    def detect(cls, max_age: float = _DETECT_TTL) -> "MachineState":
         """Best-effort live reading. Every probe degrades to "unknown, assume permissive".
 
-        None of these probes injects input or unlocks anything; they only read state.
+        None of these probes injects input or unlocks anything; they only read state. Pass
+        ``max_age=0`` to force a fresh reading (the doctor command does).
         """
+        global _detect_cache
+        now = time.time()
+        if _detect_cache is not None and max_age > 0 and now - _detect_cache[0] <= max_age:
+            return replace(_detect_cache[1], detected_at=now)
+        state = cls._probe()
+        state.detected_at = now
+        _detect_cache = (now, state)
+        return state
+
+    @classmethod
+    def _probe(cls) -> "MachineState":
+        """The actual readings, uncached."""
         state = cls()
         try:
             if os.name == "nt":  # pragma: no cover - windows only
@@ -96,16 +126,84 @@ class MachineState:
                 user32 = ctypes.windll.user32  # type: ignore[attr-defined]
                 state.session_locked = bool(user32.GetForegroundWindow() == 0)
                 state.display_attached = bool(user32.GetSystemMetrics(0) > 0)
-                state.audio_device = bool(user32.GetSystemMetrics(0) > 0)
+                # Audio is an audio question. This used to reuse the screen-width metric, so a
+                # machine with no microphone or speaker (a headless box, a muted RDP session)
+                # was reported as ready for voice work and the task failed later instead.
+                state.audio_device = _windows_audio_available()
             else:
                 state.display_attached = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
                 state.headless_process = not state.display_attached
+            # These three were declared on the dataclass and never filled by the probe, so
+            # ``user_active`` was permanently True, ``requirements.user_present`` could never
+            # defer, and the headless fallback for unattended GUI work was unreachable.
+            state.idle_seconds = _idle_seconds()
+            state.network = _network_available()
             battery = _battery()
             if battery is not None:
                 state.battery_pct, state.on_ac = battery
         except Exception:  # a probe must never break a task
             return cls()
         return state
+
+
+def _windows_audio_available() -> bool:  # pragma: no cover - windows only
+    """Does this machine have at least one playback *and* capture device?"""
+    try:
+        import ctypes
+
+        winmm = ctypes.windll.winmm  # type: ignore[attr-defined]
+        speakers = int(winmm.waveOutGetNumDevices())
+        microphones = int(winmm.waveInGetNumDevices())
+        return speakers > 0 and microphones > 0
+    except Exception:
+        # Unknown is not "yes": voice tasks are better deferred than silently mis-run.
+        return False
+
+
+def _idle_seconds() -> float:
+    """Seconds since the last human input, or 0.0 when the platform cannot say.
+
+    Unknown is reported as "someone is here": that keeps unattended GUI work from being
+    started against a desktop a person is using, which is the safe direction to be wrong in.
+    """
+    if os.name == "nt":  # pragma: no cover - windows only
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class LASTINPUTINFO(ctypes.Structure):
+                _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+            info = LASTINPUTINFO()
+            info.cbSize = ctypes.sizeof(LASTINPUTINFO)
+            if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):  # type: ignore[attr-defined]
+                return 0.0
+            tick = ctypes.windll.kernel32.GetTickCount()  # type: ignore[attr-defined]
+            return max(0.0, float((tick - info.dwTime) & 0xFFFFFFFF) / 1000.0)
+        except Exception:
+            return 0.0
+    if os.environ.get("DISPLAY"):
+        try:  # X11 only, and only if the tool is installed
+            out = subprocess.run(["xprintidle"], capture_output=True, timeout=1.5, check=False)
+            if out.returncode == 0 and out.stdout.strip().isdigit():
+                return float(out.stdout.strip()) / 1000.0
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+    return 0.0
+
+
+def _network_available() -> bool:
+    """Is there a route out? A UDP connect sends no packets; it only asks the routing table."""
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.settimeout(0.2)
+            probe.connect(("1.1.1.1", 53))
+            return True
+        finally:
+            probe.close()
+    except OSError:
+        return False
 
 
 def _battery() -> tuple[int, bool] | None:
@@ -158,13 +256,35 @@ class PreflightDecision:
 class Preflight:
     """Turns (task requirements, machine state) into a decision. Pure logic, fully testable."""
 
-    def __init__(self, bus: EventBus | None = None, state_provider: Any = None):
+    def __init__(
+        self,
+        bus: EventBus | None = None,
+        state_provider: Any = None,
+        busy_provider: Callable[[], str] | None = None,
+        isolation_available: bool = False,
+    ):
         self.bus = bus or EventBus()
         #: Overridable for tests, for a remote-session probe, or for a headless server farm.
         self.state_provider = state_provider or MachineState.detect
+        #: Asked only when the state snapshot does not already say what is busy. The stack wires
+        #: this to the responsiveness governor, so a game or call actually defers desktop work
+        #: instead of the busy branch never being reached outside a test.
+        self.busy_provider = busy_provider
+        #: True when a disposable session/VM is configured, which is the only way unattended
+        #: GUI work is allowed to proceed (contract 22.2).
+        self.isolation_available = isolation_available
 
     def check(self, requirements: TaskRequirements, origin: str = "user_request", state: MachineState | None = None) -> PreflightDecision:
         state = state or self.state_provider()
+        if self.busy_provider is not None and not state.busy_reason:
+            try:
+                busy = self.busy_provider() or ""
+            except Exception:
+                busy = ""  # an unreadable busy probe means "not busy", never "crash the task"
+            if busy:
+                state = replace(state, busy_reason=busy)
+        if self.isolation_available and not state.isolation_available:
+            state = replace(state, isolation_available=True)
         reasons: list[str] = []
         decision: PreflightDecision
 

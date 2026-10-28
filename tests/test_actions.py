@@ -8,12 +8,14 @@ import os
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
 from tests.helpers import Stack
 from orbynth.actions.browser import BrowserController, TabInfo, set_controller
 from orbynth.actions.input_control import FocusGuard, RecordingBackend, WindowRef, set_backend, type_verified
 from orbynth.actions.registry import DriverUnavailable
-from orbynth.actions.whatsapp import MockWhatsApp, set_backend as set_whatsapp_backend
+from orbynth.actions.whatsapp import set_backend as set_whatsapp_backend
+from tests.whatsapp_double import MockWhatsApp
 from orbynth.config import expand_capabilities
 
 
@@ -317,6 +319,12 @@ class FakeBrowser(BrowserController):
         return {"scroll": [0, dy], "to": to or None}
 
     def evaluate(self, script):
+        # Answer the verification probes the way a real page would: a selector either exists or it
+        # does not, and page text either contains the phrase or it does not.
+        if script.strip().startswith("!!document.querySelector"):
+            return True
+        if ".includes(" in script:
+            return False
         if "location.href" in script and "document.body" not in script:
             return self.tabs_list[0].url
         if "document.body" in script or "innerText" in script:
@@ -414,6 +422,37 @@ class BrowserActionTests(ActionTestCase):
         result = self.stack.tool("browser_cookies", capabilities=["browser.cookies"])
         self.assertEqual(result.output["cookies"][0]["value"], "***")
 
+    def test_finder_scripts_search_shadow_roots_and_frames(self):
+        """The regression this guards: a plain document.querySelector finds nothing in a modern app."""
+        from orbynth.actions.browser import _click_script, _type_script
+
+        click = _click_script("Sign in", "text", 1)
+        self.assertIn("__deepQueryAll", click)
+        self.assertIn("shadowRoot", click)
+        self.assertIn("contentDocument", click)
+        self.assertIn("cross_origin_frames", click)
+        typed = _type_script("email", "me@example.com", "name", True)
+        self.assertIn("__deepQueryAll", typed)
+        self.assertNotIn("document.querySelector(", typed.split("const __orbynthRoots")[-1])
+
+    def test_act_verifies_the_expected_result(self):
+        result = self.stack.tool("browser_act", capabilities=["browser.click"], target="Sign in", by="text", expect="#email")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.output["verified"]["by"], "expected_selector")
+        self.assertIn(("click", "Sign in", "text", 1), self.browser.log)
+
+    def test_act_fails_honestly_when_the_expectation_never_arrives(self):
+        result = self.stack.tool(
+            "browser_act", capabilities=["browser.click"], target="Sign in", expect_text="Order confirmed", timeout=0.3
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("never appeared", result.error)
+
+    def test_dialog_action_reports_a_controller_that_cannot_answer(self):
+        result = self.stack.tool("browser_dialog", capabilities=["browser.click"], accept=True)
+        self.assertFalse(result.ok)
+        self.assertIn("cannot answer dialogs", result.error)
+
 
 class WhatsAppTests(ActionTestCase):
     def setUp(self):
@@ -471,6 +510,290 @@ class WhatsAppTests(ActionTestCase):
         open(real, "wb").write(b"\x89PNG")
         sent = self.stack.tool("whatsapp_send_media", capabilities=["whatsapp.media"], chat="Mom", path=real, caption="hi")
         self.assertTrue(sent.output["sent"])
+
+    def test_archive_round_trip_and_settings_reflect_it(self):
+        self.stack.tool("whatsapp_pair", capabilities=["whatsapp.pair"])
+        self.assertEqual(self.stack.tool("whatsapp_archived", capabilities=["whatsapp.chat"]).output["count"], 0)
+        archived = self.stack.tool("whatsapp_archive", capabilities=["whatsapp.chat"], chat="Mom", archived=True)
+        self.assertTrue(archived.output["archived"])
+        listed = self.stack.tool("whatsapp_archived", capabilities=["whatsapp.chat"])
+        self.assertEqual([row["name"] for row in listed.output["chats"]], ["Mom"])
+        settings = self.stack.tool("whatsapp_settings", capabilities=["whatsapp.chat"])
+        self.assertEqual(settings.output["session"]["archived"], 1)
+        restored = self.stack.tool("whatsapp_archive", capabilities=["whatsapp.chat"], chat="Mom", archived=False)
+        self.assertFalse(restored.output["archived"])
+        self.assertEqual(self.stack.tool("whatsapp_archived", capabilities=["whatsapp.chat"]).output["count"], 0)
+
+    def test_pin_mute_and_unread_are_reported(self):
+        self.stack.tool("whatsapp_pair", capabilities=["whatsapp.pair"])
+        pinned = self.stack.tool("whatsapp_pin", capabilities=["whatsapp.chat"], chat="Mom", pinned=True)
+        self.assertTrue(pinned.output["pinned"])
+        muted = self.stack.tool("whatsapp_mute", capabilities=["whatsapp.chat"], chat="Mom", muted=True, seconds=60)
+        self.assertEqual(muted.output["seconds"], 60)
+        self.assertTrue(self.stack.tool("whatsapp_unread", capabilities=["whatsapp.chat"]).output["chats"])
+
+    def _fake_bridge(self):
+        """A bridge over a virtual loopback cable, with a voice that never touches a sound card."""
+        from orbynth.voice.callbridge import CallAudioBridge
+
+        class FakeVoice:
+            tier = "realtime"
+
+            def status(self):
+                return {"tier": "realtime", "engine": "fake-realtime"}
+
+            def frames(self, text, voice=""):
+                for _ in range(25):
+                    yield b"\x10\x27" * 160
+
+        class FakeStream:
+            def __init__(self):
+                self.written = 0
+
+            def start(self):
+                pass
+
+            def write(self, frame):
+                self.written += 1
+
+            def read(self, count):
+                return b"\x10\x27" * (count // 2)
+
+            def stop(self):
+                pass
+
+            def close(self):
+                pass
+
+        class FakeAudio:
+            def __init__(self):
+                self.stream = FakeStream()
+
+            def query_devices(self):
+                return [
+                    {"index": 0, "name": "CABLE Input (VB-Audio Virtual Cable)", "inputs": 0, "outputs": 2},
+                    {"index": 1, "name": "CABLE Output (VB-Audio Virtual Cable)", "inputs": 2, "outputs": 0},
+                ]
+
+            def open_output(self, index, rate):
+                return self.stream
+
+            def open_input(self, index, rate):
+                return self.stream
+
+        audio = FakeAudio()
+        return CallAudioBridge(voice=FakeVoice(), audio=audio), audio
+
+    def test_speaking_into_a_call_really_writes_audio_frames(self):
+        """The bug this guards: the phrase was recorded in the result and never synthesised."""
+        import orbynth.actions.whatsapp as whatsapp
+
+        bridge, audio = self._fake_bridge()
+        self.assertEqual(bridge.route.kind, "virtual_cable")
+        whatsapp.set_bridge(bridge)
+        try:
+            self.stack.tool("whatsapp_pair", capabilities=["whatsapp.pair"])
+            spoken = self.stack.tool("whatsapp_say", capabilities=["whatsapp.call"], text="hello, this is Orbynth")
+            self.assertTrue(spoken.output["spoken"])
+            self.assertGreater(spoken.output["frames"], 0)
+            self.assertEqual(spoken.output["tier"], "realtime")
+            self.assertGreater(audio.stream.written, 0)
+            audio_report = self.stack.tool("whatsapp_audio", capabilities=["whatsapp.call"])
+            self.assertEqual(audio_report.output["route"]["kind"], "virtual_cable")
+            self.assertTrue(audio_report.output["can_hold_conversation"])
+        finally:
+            whatsapp.set_bridge(None)
+
+    def test_placing_a_call_reports_the_audio_route_and_can_speak(self):
+        import orbynth.actions.whatsapp as whatsapp
+
+        bridge, audio = self._fake_bridge()
+        whatsapp.set_bridge(bridge)
+        try:
+            self.stack.tool("whatsapp_pair", capabilities=["whatsapp.pair"])
+            placed = self.stack.tool("whatsapp_call", capabilities=["whatsapp.call"], chat="Mom", speak="one moment please")
+            self.assertTrue(placed.output["spoken"]["spoken"])
+            self.assertEqual(placed.output["audio"]["voice"]["tier"], "realtime")
+            self.assertGreater(audio.stream.written, 0)
+            transcript = self.stack.tool("whatsapp_transcript", capabilities=["whatsapp.call"], seconds=1)
+            self.assertTrue(transcript.ok)
+        finally:
+            whatsapp.set_bridge(None)
+
+    def test_listening_returns_words_when_a_transcriber_is_wired(self):
+        import orbynth.actions.whatsapp as whatsapp
+
+        bridge, _ = self._fake_bridge()
+        whatsapp.set_bridge(bridge)
+        whatsapp.set_transcriber(lambda pcm: "caller said hello" if pcm else "")
+        try:
+            heard = self.stack.tool("whatsapp_listen", capabilities=["whatsapp.call"], seconds=0.2)
+            self.assertEqual(heard.output["text"], "caller said hello")
+            self.assertEqual(heard.output["transcriber"], "voice-session")
+        finally:
+            whatsapp.set_bridge(None)
+            whatsapp.set_transcriber(None)
+
+
+class WindowsDriverTests(unittest.TestCase):
+    """Window actions against a scripted window list: no display, no OS window manager."""
+
+    def setUp(self):
+        from orbynth.actions import windows
+
+        self.windows = windows
+        self.stack = Stack()
+        self.addCleanup(self.stack.close)
+
+    def tool(self, name, **kwargs):
+        return self.stack.tool(name, capabilities=["*"], **kwargs)
+
+    def test_close_verifies_the_window_actually_went_away(self):
+        window = {"title": "Untitled - Notepad", "handle": 7, "pid": 4242}
+        calls = {"n": 0}
+
+        def scripted():
+            calls["n"] += 1
+            return [] if calls["n"] > 1 else [window]
+
+        with mock.patch.object(self.windows, "list_windows", scripted), mock.patch.object(
+            self.windows, "_request_close", lambda w: "test"
+        ):
+            result = self.tool("windows_close", title_contains="Notepad", timeout=2.0)
+        self.assertTrue(result.ok)
+        self.assertTrue(result.output["verified"])
+        self.assertEqual(result.output["via"], "test")
+
+    def test_close_names_the_blocking_prompt_instead_of_claiming_success(self):
+        window = {"title": "Untitled - Notepad", "handle": 7, "pid": 4242}
+        prompt = {"title": "Save changes?", "handle": 8, "pid": 4242}
+        with mock.patch.object(self.windows, "list_windows", lambda: [window, prompt]), mock.patch.object(
+            self.windows, "_request_close", lambda w: "test"
+        ):
+            result = self.tool("windows_close", title_contains="Notepad", timeout=0.4)
+        self.assertFalse(result.ok)
+        self.assertIn("still open", result.error)
+        self.assertIn("Save changes?", str(result.evidence))
+
+    def test_state_change_is_confirmed_or_reported_as_unconfirmed(self):
+        window = {"title": "Calculator", "handle": 9, "pid": 5}
+        with mock.patch.object(self.windows, "list_windows", lambda: [window]), mock.patch.object(
+            self.windows, "_apply_state", lambda w, s: None
+        ), mock.patch.object(self.windows, "window_state", lambda w: "unknown"):
+            result = self.tool("windows_state", title_contains="Calculator", state="maximise")
+        self.assertTrue(result.ok)
+        self.assertIsNone(result.output["verified"])
+        self.assertIn("cannot be confirmed", result.output["note"])
+
+    def test_a_state_change_the_os_did_not_apply_is_a_failure(self):
+        window = {"title": "Calculator", "handle": 9, "pid": 5}
+        with mock.patch.object(self.windows, "list_windows", lambda: [window]), mock.patch.object(
+            self.windows, "_apply_state", lambda w, s: None
+        ), mock.patch.object(self.windows, "window_state", lambda w: "normal") as _:
+            result = self.tool("windows_state", title_contains="Calculator", state="minimise")
+        self.assertFalse(result.ok)
+        self.assertIn("reports", result.error)
+
+    def test_launch_will_not_accept_a_window_that_already_existed(self):
+        existing = {"title": "notes.txt - Notepad", "handle": 11, "pid": 900}
+        with mock.patch.object(self.windows, "list_windows", lambda: [existing]), mock.patch.object(
+            self.windows, "launch_app", lambda target, args=(): {"launched": target, "argv": [target], "pid": 1}
+        ):
+            result = self.tool("windows_launch", target="notepad", expect_window="Notepad", timeout=0.4)
+        self.assertFalse(result.ok)
+        self.assertIn("no new window", result.error)
+        self.assertIn("notes.txt - Notepad", str(result.evidence))
+
+
+class DpiAwarenessTests(unittest.TestCase):
+    def test_probe_is_idempotent_and_explains_itself(self):
+        from orbynth.actions.input_control import ensure_dpi_awareness
+
+        first = ensure_dpi_awareness()
+        second = ensure_dpi_awareness()
+        self.assertEqual(first, second)
+        self.assertIn("applied", first)
+        self.assertIn("scale", first)
+        self.assertTrue(first["detail"])
+
+
+class OfficeWriteVerificationTests(unittest.TestCase):
+    """A save is only a save when a non-empty, changed file is on disk afterwards."""
+
+    def test_missing_empty_and_unchanged_writes_are_all_failures(self):
+        from orbynth.actions.office import _verify_written
+        from orbynth.actions.registry import ActionFailed
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, "report.docx")
+            with self.assertRaises(ActionFailed) as missing:
+                _verify_written(target)
+            self.assertIn("no file was written", str(missing.exception))
+            open(target, "wb").close()
+            with self.assertRaises(ActionFailed) as empty:
+                _verify_written(target)
+            self.assertIn("empty", str(empty.exception))
+            with open(target, "wb") as handle:
+                handle.write(b"x" * 64)
+            stat = os.stat(target)
+            with self.assertRaises(ActionFailed) as unchanged:
+                _verify_written(target, (stat.st_size, stat.st_mtime_ns))
+            self.assertIn("did not change", str(unchanged.exception))
+            with open(target, "wb") as handle:
+                handle.write(b"y" * 128)
+            result = _verify_written(target, (stat.st_size, stat.st_mtime_ns))
+            self.assertEqual(result["bytes"], 128)
+            self.assertTrue(result["path"].endswith("report.docx"))
+
+    def test_quiesce_suppresses_prompts_and_survives_a_locked_property(self):
+        from orbynth.actions.office import _quiesce
+
+        class Locked:
+            def __setattr__(self, name, value):
+                if name == "AskToUpdateLinks":
+                    raise AttributeError("read-only in this host")
+                object.__setattr__(self, name, value)
+
+        application = Locked()
+        applied = _quiesce(application)
+        self.assertEqual(applied.get("DisplayAlerts"), 0)
+        self.assertNotIn("AskToUpdateLinks", applied)
+
+
+class WhatsAppSidecarContractTests(unittest.TestCase):
+    """The Python client and the bundled Node sidecar must agree on the RPC surface.
+
+    ``whatsapp.py`` talks to ``sidecars/whatsapp/sidecar.js`` over JSON-RPC. The connectivity
+    failure this guards against is silent: the client asks for a method the sidecar never
+    implemented and every WhatsApp action dies at the transport with a timeout.
+    """
+
+    def root(self) -> str:
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def test_sidecar_exists_at_the_path_the_driver_resolves(self):
+        from orbynth.actions.whatsapp import SIDECAR_DIR
+
+        script = os.path.join(SIDECAR_DIR, "sidecar.js")
+        self.assertTrue(os.path.exists(script), f"the driver launches {script} and it is missing")
+        self.assertGreater(os.path.getsize(script), 2000)
+
+    def test_every_rpc_method_the_client_calls_is_implemented(self):
+        import re
+
+        client = open(os.path.join(self.root(), "orbynth", "actions", "whatsapp.py"), encoding="utf-8").read()
+        sidecar = open(os.path.join(self.root(), "sidecars", "whatsapp", "sidecar.js"), encoding="utf-8").read()
+        wanted = sorted(set(re.findall(r'call_rpc\("([a-z_]+)"', client)))
+        self.assertTrue(wanted, "no RPC calls were found in the client at all")
+        missing = [name for name in wanted if name not in sidecar]
+        self.assertEqual(missing, [], f"the sidecar implements no handler for: {missing}")
+        self.assertIn("whatsapp_audio" if False else "hangup", sidecar)
+
+    def test_sidecar_declares_its_recorded_chat_actions(self):
+        """Voice calls, archived chats and settings must be handled, not just the basics."""
+        sidecar = open(os.path.join(self.root(), "sidecars", "whatsapp", "sidecar.js"), encoding="utf-8").read()
+        for name in ("archive", "pin", "mute", "settings", "call", "hangup", "unread", "react", "reply", "delete_message", "forward", "export_chat"):
+            self.assertIn(name, sidecar, f"the sidecar has no {name} handler")
 
 
 if __name__ == "__main__":

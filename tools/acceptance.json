@@ -20,6 +20,106 @@
       "blocking": true
     },
     {
+      "id": "reality_gate",
+      "title": "No banned pattern ships: no fake functionality, no test double or marker in the package",
+      "milestone": "M0",
+      "kind": "ops",
+      "op": "reality_gate",
+      "blocking": true
+    },
+    {
+      "id": "office_tier_b",
+      "title": "Word, Excel and CSV files written and read back with no Office installed",
+      "milestone": "M2",
+      "kind": "ops",
+      "op": "office_tier_b",
+      "blocking": true
+    },
+    {
+      "id": "office_tier_a",
+      "title": "End-to-end Word, Excel and Outlook work through installed Office (Tier A)",
+      "milestone": "M4",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["microsoft_office", "interactive_desktop"],
+      "procedure": "On a machine with Microsoft 365: create a Word document with headings and a table, save it, reopen it and confirm the content; create an Excel workbook with a formula and confirm the recalculated value; send and receive a mail in Outlook. Each step must return VERIFIED with a receipt, and closing a modified document must not silently discard it."
+    },
+    {
+      "id": "terminal_engine",
+      "title": "Owned PTY sessions with marker completion, echo verification and L1/L2/L3 classification",
+      "milestone": "M2",
+      "kind": "ops",
+      "op": "terminal_engine",
+      "blocking": true
+    },
+    {
+      "id": "terminal_interactive",
+      "title": "Interactive programs through a session: a REPL, a pager, vim, a y/n installer, Ctrl+C, an SSH login",
+      "milestone": "M4",
+      "kind": "manual",
+      "blocking": true,
+      "requires": ["interactive_desktop"],
+      "procedure": "Open a session, run python3 then 2+2 in the REPL and exit; page a long file with less and search inside it; edit and save a file in vim; answer a y/n installer; start a long job and Ctrl+C it; ssh to the test host and log in. Each must return the prompt and a receipt that names the completion reason."
+    },
+    {
+      "id": "hardware_sensors",
+      "title": "Sensor readings are plausibility-filtered, alerts fire and clear correctly, thresholds can only be tightened",
+      "milestone": "M2",
+      "kind": "ops",
+      "op": "hardware_sensors",
+      "blocking": true
+    },
+    {
+      "id": "sensor_rig",
+      "title": "Physical sensor rig: fans, rails, CPU registers and temperatures read under real load",
+      "milestone": "M4",
+      "kind": "manual",
+      "blocking": false,
+      "requires": ["sensor_rig", "privileged_helper"],
+      "procedure": "On the hardware rig, install the S2 privileged helper and confirm the Sensor Capability Report lists Super I/O fans, rails and CPU registers with their sources; apply a controlled load and confirm temperature rises, the fan curve responds, and a deliberately stuck sensor is reported as suspect rather than as a hot machine."
+    },
+    {
+      "id": "local_index",
+      "title": "Local search index: real extraction, incremental scans, verified hits, honest gaps",
+      "milestone": "M2",
+      "kind": "ops",
+      "op": "local_index",
+      "blocking": true
+    },
+    {
+      "id": "search_benchmark",
+      "title": "Retrieval accuracy on a 100,000-file corpus, and hybrid (semantic) retrieval",
+      "milestone": "M3",
+      "kind": "manual",
+      "blocking": false,
+      "requires": ["corpus_100k", "embedding_model"],
+      "procedure": "Index the 100,000-file benchmark corpus with the quantized embedding model and measure recall@10 for a fixed query set against the lexical baseline; confirm idle indexing stays within the budget in 2.2 and that OCR and PDF extraction run where the extractors are installed. Record both numbers, including any regression."
+    },
+    {
+      "id": "contracts",
+      "title": "Schemas, versions and generated Python/TypeScript/C# bindings agree; live records validate",
+      "milestone": "M1",
+      "kind": "ops",
+      "op": "contracts",
+      "blocking": true
+    },
+    {
+      "id": "capability_matrix",
+      "title": "CAPABILITY_MATRIX.md matches the live registry; no capability is claimed without evidence",
+      "milestone": "M1",
+      "kind": "ops",
+      "op": "capability_matrix",
+      "blocking": true
+    },
+    {
+      "id": "action_journal",
+      "title": "Exactly-once effects, crash reconciliation and undo-last-task",
+      "milestone": "M0",
+      "kind": "ops",
+      "op": "journal",
+      "blocking": true
+    },
+    {
       "id": "tests_core",
       "title": "Core, LLM and action unit suites",
       "milestone": "M0",
@@ -175,6 +275,14 @@
       "milestone": "M3",
       "kind": "ops",
       "op": "governor",
+      "blocking": true
+    },
+    {
+      "id": "hud_coverage",
+      "title": "Every emitted topic has a place in the interface; no bare-string topics; coverage file current",
+      "milestone": "M4",
+      "kind": "ops",
+      "op": "hud_coverage",
       "blocking": true
     },
     {

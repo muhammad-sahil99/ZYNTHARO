@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbynth.local/contracts/interfaces.schema.json",
+  "title": "ORBYNTH interface contracts",
+  "description": "The two interfaces that cross a trust boundary: what a plugin is allowed to declare before it is loaded, and what the native helper may be asked to do. Both are versioned in contracts/versions.json; a producer declaring an incompatible version is warned about and then disabled, never trusted.",
+  "$defs": {
+    "plugin-manifest": {
+      "title": "Plugin manifest",
+      "description": "Written by the Artificer, read before any plugin code is imported. `contracts` records the interface versions the plugin was authored against, so a stale plugin is refused with a reason instead of failing at an arbitrary later step.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "entry", "capabilities", "schema_version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 2, "maxLength": 60, "pattern": "^[a-z][a-z0-9_]*$"},
+        "version": {"type": "string", "minLength": 3, "maxLength": 40},
+        "description": {"type": "string", "maxLength": 500},
+        "author": {"type": "string", "maxLength": 120},
+        "entry": {"type": "string", "minLength": 3, "maxLength": 200},
+        "kind": {"type": "string", "enum": ["python", "declarative"]},
+        "capabilities": {"type": "array", "items": {"type": "string", "maxLength": 120}, "maxItems": 60},
+        "actions": {"type": "array", "items": {"type": "string", "maxLength": 80}, "maxItems": 200},
+        "depends_on": {"type": "array", "items": {"type": "string", "maxLength": 60}, "maxItems": 40},
+        "created_at": {"type": "number", "minimum": 0},
+        "schema_version": {"type": "integer", "minimum": 1},
+        "source": {"type": "string", "enum": ["forged", "manual", "imported"]},
+        "task": {"type": "string", "maxLength": 500},
+        "runtime": {"type": "string", "maxLength": 200},
+        "contracts": {
+          "type": "object",
+          "description": "Contract name -> semantic version the plugin was authored against.",
+          "additionalProperties": {"type": "string", "minLength": 3, "maxLength": 40}
+        }
+      }
+    },
+    "native-rpc-request": {
+      "title": "Native helper RPC request",
+      "description": "The supervisor's sidecar is the only component allowed to talk to the OS below the Python layer. Requests are explicitly enumerated: an unknown method is refused, not forwarded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "method", "params"],
+      "properties": {
+        "id": {"type": "string", "minLength": 4, "maxLength": 64},
+        "method": {
+          "type": "string",
+          "enum": [
+            "input.key",
+            "input.click",
+            "input.move",
+            "input.scroll",
+            "window.list",
+            "window.focus",
+            "window.state",
+            "window.injected_flag",
+            "screen.capture",
+            "hotkey.register",
+            "process.start",
+            "process.stop",
+            "process.list"
+          ]
+        },
+        "params": {"type": "object"},
+        "deadline_ms": {"type": "integer", "minimum": 1, "maximum": 120000},
+        "requires_uninjected": {"type": "boolean"}
+      }
+    },
+    "native-rpc-response": {
+      "title": "Native helper RPC response",
+      "description": "A response always says whether the effect was observed, and on which channel. `ok` alone is never proof (spec 4.2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ok"],
+      "properties": {
+        "id": {"type": "string", "minLength": 4, "maxLength": 64},
+        "ok": {"type": "boolean"},
+        "result": {},
+        "error": {"type": "string", "maxLength": 2000},
+        "channel": {"type": "string", "enum": ["os_query", "screen_diff", "injected_flag", "none"]},
+        "observed": {"type": "object"},
+        "duration_ms": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

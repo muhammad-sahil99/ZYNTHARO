@@ -47,6 +47,8 @@ QUOTA_WARNING = "quota.warning"
 QUOTA_EXHAUSTED = "quota.exhausted"
 PROVIDER_ERROR = "provider.error"
 
+BILLING_BLOCKED = "billing.blocked"
+
 MEMORY_WRITE = "memory.write"
 MEMORY_RECALL = "memory.recall"
 
@@ -57,6 +59,11 @@ JOB_STARTED = "job.started"
 JOB_EXITED = "job.exited"
 JOB_RESTARTED = "job.restarted"
 JOB_ORPHANED = "job.orphaned"
+
+#: The action journal (operator contract 4.5): what an interrupted session left behind, and
+#: what an undo actually reversed. Both are user-visible facts, not internal bookkeeping.
+JOURNAL_RECONCILED = "journal.reconciled"
+JOURNAL_UNDONE = "journal.undone"
 
 TASK_PREFLIGHT = "task.preflight"
 TASK_VERIFIED = "task.verified"
@@ -82,6 +89,16 @@ VOICE_LISTENING = "voice.listening"
 VOICE_TRANSCRIPT = "voice.transcript"
 VOICE_SPEAKING = "voice.speaking"
 VOICE_WAKE = "voice.wake"
+#: Spoken/heard language differs from the configured one (multi-language interface, 22.11).
+VOICE_LANGUAGE = "voice.language"
+
+#: Hardware monitor (spec 16): a deterministic service, not an agent.
+HARDWARE_ALERT = "hardware.alert"
+HARDWARE_CLEARED = "hardware.cleared"
+HARDWARE_TUNED = "hardware.tuned"
+
+#: Local search index (spec 14.2): what a scan actually did, never what it hoped to do.
+LOCAL_INDEX = "index.scan"
 
 HUD_SCENE = "hud.scene"
 HUD_NOTICE = "hud.notice"

@@ -56,11 +56,17 @@ LANGUAGES: dict[str, Language] = {
 
 RTL_LANGUAGES = frozenset(code for code, lang in LANGUAGES.items() if lang.direction == RTL)
 
-#: Letters that exist in Urdu (or Persian) but not in standard Arabic orthography. Their
-#: presence is far stronger evidence of Urdu than a raw Arabic-block character count,
-#: because Urdu shares the block with Arabic.
-URDU_SPECIFIC = frozenset("ٹڈڑںھۂۃےۓڪڭپچژگکیہی")
-PERSIAN_SPECIFIC = frozenset("پچژگک")
+#: Letters that exist in Urdu *and* Persian but not in standard Arabic orthography
+#: (the Persian/Urdu kaf and yeh, and the p/che/dje/ze/gaf letters).
+PERSIAN_SPECIFIC = frozenset("پچژگکی")
+URDU_SHARED_WITH_PERSIAN = PERSIAN_SPECIFIC
+#: Letters Urdu has and Persian does not: retroflex ٹ ڈ ڑ, noon ghunna ں, do-chashmi he ھ,
+#: bare he ے, and the Urdu heh/teh marbuta forms.
+URDU_ONLY = frozenset("ٹڈڑںھۂۃےۓڪڭہ")
+URDU_SPECIFIC = URDU_ONLY | URDU_SHARED_WITH_PERSIAN
+#: Letters that occur in standard Arabic and are largely absent from Persian/Urdu prose.
+#: Their presence is evidence *for* Arabic and against Persian.
+ARABIC_ONLY = frozenset("يكةىئإأؤذصضطظثعغ")
 
 #: Unicode blocks that only occur in right-to-left scripts.
 _RTL_RANGES = (
@@ -96,21 +102,37 @@ def direction_of(text: str) -> str:
 
 
 def detect(text: str) -> str:
-    """Best-effort language code. Requires enough script-specific text to be meaningful."""
+    """Best-effort language code. Requires enough script-specific text to be meaningful.
+
+    Urdu and Persian share the Arabic block with Arabic itself, so a raw character count
+    decides nothing. The decision is made from *positive* evidence instead:
+
+    * a retroflex or Urdu-only letter (``ٹ ڈ ڑ ں ھ ے``) is Urdu evidence, and it cannot occur
+      in Arabic or Persian by accident;
+    * a Persian/Urdu letter (``پ چ ژ گ ک ی``) is evidence against Arabic; when such letters are
+      dense enough and no Arabic-only letter (``ي ك ة ى``) appears, the answer is Persian;
+    * otherwise the text is Arabic.
+
+    A Persian sentence made only of letters that Arabic also uses (``سلام``, say) is genuinely
+    indistinguishable without a dictionary, and is reported as Arabic rather than guessed at.
+    """
     if not text.strip():
         return "en"
     counts: dict[str, int] = {}
+    arabic_block = 0
+    urdu_markers = 0
+    persian_markers = 0
+    arabic_only = 0
     for char in text:
         point = ord(char)
         if 0x0600 <= point <= 0x06FF:
-            # Urdu/Persian-specific letters outweigh shared Arabic ones: they cannot appear
-            # by accident in Arabic text, while shared letters appear constantly in Urdu.
-            if char in URDU_SPECIFIC:
-                counts["ur"] = counts.get("ur", 0) + 3
+            arabic_block += 1
+            if char in URDU_ONLY:
+                urdu_markers += 1
             elif char in PERSIAN_SPECIFIC:
-                counts["fa"] = counts.get("fa", 0) + 2
-            else:
-                counts["ar"] = counts.get("ar", 0) + 1
+                persian_markers += 1
+            elif char in ARABIC_ONLY:
+                arabic_only += 1
         elif 0x0590 <= point <= 0x05FF:
             counts["he"] = counts.get("he", 0) + 1
         elif 0x0900 <= point <= 0x097F:
@@ -119,6 +141,13 @@ def detect(text: str) -> str:
             counts["zh"] = counts.get("zh", 0) + 1
         elif char.isalpha():
             counts["en"] = counts.get("en", 0) + 1
+    if arabic_block:
+        if urdu_markers >= 2 or (urdu_markers == 1 and persian_markers <= 2):
+            counts["ur"] = arabic_block + urdu_markers * 2
+        elif persian_markers >= 2 and arabic_only == 0 and persian_markers * 5 >= arabic_block:
+            counts["fa"] = arabic_block + persian_markers
+        else:
+            counts["ar"] = arabic_block + arabic_only
     if not counts:
         return "en"
     best = max(counts, key=lambda k: counts[k])

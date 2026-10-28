@@ -85,6 +85,7 @@
         from: fromId, to: toId || null, kind: kind || "message",
         born: performance.now(), life: 1100,
         color: (to && to.agent.color) || (from && from.agent.color) || "#5ad1ff",
+        trail: [],
       });
       if (fromId) this.heat.set(fromId, 1);
       if (toId) this.heat.set(toId, 1);
@@ -129,6 +130,39 @@
         ctx.fillRect(centre.x - 280, centre.y - 280, 560, 560);
       }
 
+      /* ---- routed buses. One concentric channel per rank, each with a plate on the X axis.
+         This is what turns a scatter of curves into a wiring harness: the traces are routed
+         down channels, and a rank's channel lights warm when it is a command tier. */
+      const rankRadii = new Map();
+      this.nodes.forEach((entry) => {
+        if (!rankRadii.has(entry.rank)) rankRadii.set(entry.rank, entry.radius);
+      });
+      Array.from(rankRadii.keys()).sort((a, b) => a - b).forEach((rank) => {
+        const radius = rankRadii.get(rank);
+        if (!radius) return;
+        const warm = rank <= 1;
+        ctx.save();
+        ctx.translate(centre.x, centre.y);
+        ctx.setLineDash([3, 9]);
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = warm ? "rgba(255,138,60,0.18)" : "rgba(90,209,255,0.12)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, -0.085, 0.085);
+        ctx.strokeStyle = warm ? "rgba(255,138,60,0.7)" : "rgba(90,209,255,0.44)";
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.font = "8px ui-monospace, monospace";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = warm ? "rgba(255,138,60,0.72)" : "rgba(90,209,255,0.5)";
+        ctx.fillText("BUS." + String(rank).padStart(2, "0"), radius + 5, 0);
+        ctx.restore();
+      });
+
       // wires
       for (const entry of this.nodes.values()) {
         const position = this.nodePosition(entry, now);
@@ -142,10 +176,22 @@
         const midX = (origin.x + position.x) / 2 + Math.sin(now / 2600 + entry.rank) * 14;
         const midY = (origin.y + position.y) / 2 + Math.cos(now / 3100 + entry.rank) * 14;
         ctx.quadraticCurveTo(midX, midY, position.x, position.y);
-        ctx.lineWidth = 0.8 + heat * 2.2;
+        // Three passes turn a flat line into a light beam: a wide faint halo, a mid body, and a
+        // thin bright core. Cost is three strokes per wire, which is nothing next to the draw.
+        // command-tier links run warm: the orange traces in the reference plate are the main
+        // agent's own bus, and keeping the rest in role colour preserves who owns what.
+        const wireColor = entry.rank <= 1 ? "#ff8a3c" : (entry.agent.color || "#5ad1ff");
+        ctx.lineCap = "round";
+        ctx.lineWidth = 5.5 + heat * 6;
+        ctx.strokeStyle = heat > 0.02 ? this._rgba(wireColor, 0.05 + heat * 0.10) : "rgba(120, 190, 255, 0.028)";
+        ctx.stroke();
+        ctx.lineWidth = 2.1 + heat * 3.4;
+        ctx.strokeStyle = heat > 0.02 ? this._rgba(wireColor, 0.12 + heat * 0.30) : "rgba(120, 190, 255, 0.07)";
+        ctx.stroke();
+        ctx.lineWidth = 0.7 + heat * 1.6;
         ctx.strokeStyle = heat > 0.02
-          ? this._rgba(entry.agent.color || "#5ad1ff", 0.18 + heat * 0.65)
-          : "rgba(120, 190, 255, 0.13)";
+          ? this._rgba(wireColor, 0.30 + heat * 0.65)
+          : "rgba(120, 190, 255, 0.14)";
         ctx.stroke();
         if (this.wireHeat.get(key) !== undefined) {
           this.wireHeat.set(key, Math.max(0, (this.wireHeat.get(key) || 0) - 0.02));
@@ -166,6 +212,17 @@
         const x = centre.x + (position.x - centre.x) * progress;
         const y = centre.y + (position.y - centre.y) * progress;
         const alpha = 1 - progress;
+        // trail: the packet remembers where it has been, so traffic reads as movement
+        pulse.trail.push({ x: x, y: y });
+        if (pulse.trail.length > 14) pulse.trail.shift();
+        pulse.trail.forEach((point, index) => {
+          const fade = (index / pulse.trail.length) * alpha * 0.5;
+          if (fade <= 0.01) return;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 1.2 + 2.6 * (index / pulse.trail.length), 0, Math.PI * 2);
+          ctx.fillStyle = this._rgba(pulse.color, fade);
+          ctx.fill();
+        });
         ctx.beginPath();
         ctx.arc(x, y, 3.4 + 3 * alpha, 0, Math.PI * 2);
         ctx.fillStyle = this._rgba(pulse.color, alpha);
@@ -191,6 +248,11 @@
           ctx.fillStyle = this._rgba(color, 0.18 * heat);
           ctx.fill();
         }
+        // outer halo, then a rotating arc for a busy agent: state is visible at a glance
+        ctx.beginPath();
+        ctx.arc(position.x, position.y, radius + 5, 0, Math.PI * 2);
+        ctx.fillStyle = this._rgba(color, 0.07);
+        ctx.fill();
         ctx.beginPath();
         ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(8, 18, 36, 0.92)";
@@ -198,6 +260,21 @@
         ctx.lineWidth = 1.6;
         ctx.strokeStyle = STATUS_COLOR[status] || color;
         ctx.stroke();
+        if (status === "running" || status === "working" || status === "deferred") {
+          const sweep = (now / 700) % (Math.PI * 2);
+          ctx.beginPath();
+          ctx.arc(position.x, position.y, radius + 4.5, sweep, sweep + 1.9);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = this._rgba(color, 0.75);
+          ctx.stroke();
+        }
+        if (entry.rank <= 1) {
+          ctx.beginPath();
+          ctx.arc(position.x, position.y, radius + 8, 0, Math.PI * 2);
+          ctx.lineWidth = 0.8;
+          ctx.strokeStyle = this._rgba(color, 0.22);
+          ctx.stroke();
+        }
 
         ctx.fillStyle = color;
         ctx.font = (radius + 2) + "px system-ui, sans-serif";
@@ -206,12 +283,28 @@
         ctx.fillText(entry.agent.insignia || "●", position.x, position.y + 0.5);
 
         if (this.showLabels) {
-          ctx.fillStyle = "rgba(232, 244, 255, 0.86)";
-          ctx.font = "11px ui-monospace, monospace";
-          ctx.fillText(entry.agent.name || "", position.x, position.y + radius + 13);
-          ctx.fillStyle = "rgba(143, 166, 196, 0.7)";
+          // a name plate rather than floating text: brackets, a status rule and the model id,
+          // so each node reads as a labelled unit on a panel face
+          const name = String(entry.agent.name || "").toUpperCase().slice(0, 18);
+          const model = (entry.agent.model || "unassigned").split(":").pop().slice(0, 20);
+          const width = Math.max(ctx.measureText(name).width, model.length * 5.4) + 12;
+          const top = position.y + radius + 6;
           ctx.font = "9px ui-monospace, monospace";
-          ctx.fillText((entry.agent.model || "").split(":").pop().slice(0, 22), position.x, position.y + radius + 25);
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          ctx.strokeStyle = this._rgba(color, 0.35);
+          ctx.lineWidth = 1;
+          ctx.strokeRect(position.x - width / 2, top, width, 22);
+          ctx.fillStyle = "rgba(4, 10, 22, 0.78)";
+          ctx.fillRect(position.x - width / 2, top, width, 22);
+          ctx.fillStyle = this._rgba(color, 0.95);
+          ctx.fillText(name, position.x, top + 3);
+          ctx.fillStyle = "rgba(143, 166, 196, 0.72)";
+          ctx.font = "8px ui-monospace, monospace";
+          ctx.fillText(model, position.x, top + 13);
+          // status rule under the plate: green running, amber blocked, red failed
+          ctx.fillStyle = (STATUS_COLOR[status] || color);
+          ctx.fillRect(position.x - width / 2, top + 21, width * (status === "running" ? 1 : 0.45), 1.4);
         }
         if (this.heat.get(entry.agent.agent_id) !== undefined) {
           this.heat.set(entry.agent.agent_id, Math.max(0, heat - 0.02));

@@ -36,6 +36,8 @@ from ..events import (
     EventBus,
 )
 from ..llm.providers import ToolSpec
+from ..ops.journal import COMMITTED, intent_for
+from ..ops.receipt import Receipt
 from ..ops.verification import RiskTiers
 from ..ops.owner import IRREVERSIBLE_CAPABILITIES as OWNER_IRREVERSIBLE
 
@@ -127,6 +129,15 @@ class ActionContext:
     owner_method: str = ""
     identity: Any = None
     dry_run: bool = False
+    #: The task this action belongs to. The journal groups entries by it, which is what makes
+    #: "undo last task" one command instead of a guess (4.5).
+    task_id: str = ""
+    #: Set when an action must run *at most once*, even across a crash, a retry or a model
+    #: failover. Empty means repeatable: two clicks on the same button are a legitimate human
+    #: intention, not a duplication.
+    idempotency_key: str = ""
+    #: Execution mode for this action (10.1): background | isolated | direct.
+    mode: str = "background"
     #: Set by the registry on every invoke so plugin/sub-action code can reach the tool
     #: surface while remaining inside the same capability gate.
     registry: Any = None
@@ -207,6 +218,14 @@ class ActionRegistry:
         self.risk_tiers = RiskTiers()
         #: Optional owner registry; enforced only when a context opts in (contract 22.7).
         self.owner: Any = None
+        #: Optional Capability Matrix (4.7). When present, a tool with no driver on this
+        #: machine is never offered to a model: it is reported as unavailable instead, which
+        #: is the difference between "cannot" and "fails halfway through a task".
+        self.capabilities: Any = None
+        #: Evidence receipts (4.2). Built by the host for every executed call, stored when a
+        #: memory store is attached, and attached to the result so a report can cite them.
+        self.receipts_enabled: bool = True
+        self.last_receipt: Receipt | None = None
 
     def approve(self, action_name: str, approved: bool = True) -> None:
         if approved:
@@ -255,16 +274,41 @@ class ActionRegistry:
         return len(self._actions)
 
     # -- discovery for models ----------------------------------------------------------
-    def tool_specs(self, capabilities: Iterable[str] | None = None, limit: int = 0) -> list[ToolSpec]:
-        """Tool definitions for the model, filtered to the caller's real capabilities."""
+    def tool_specs(
+        self,
+        capabilities: Iterable[str] | None = None,
+        limit: int = 0,
+        available_only: bool = True,
+    ) -> list[ToolSpec]:
+        """Tool definitions for the model, filtered to the caller's real capabilities.
+
+        With a Capability Matrix attached, tools the machine cannot run are omitted entirely
+        (4.7), and tools that have not yet been proven on a real app carry an explicit
+        ``[unproven]`` marker so a model cannot mistake an untested path for a known one. The
+        marker is one word on purpose: the detail lives in the matrix, not in every prompt.
+        """
         caps = frozenset(capabilities) if capabilities is not None else None
         specs: list[ToolSpec] = []
         for name in sorted(self._actions):
             act = self._actions[name]
             if caps is not None and act.capability not in caps:
                 continue
-            specs.append(act.tool_spec())
+            record = None
+            if self.capabilities is not None:
+                record = self.capabilities.record(name)
+                if available_only and not record.available_here:
+                    continue
+            spec = act.tool_spec()
+            if record is not None and not record.green:
+                spec.description = f"{spec.description} [unproven]"
+            specs.append(spec)
         return specs[:limit] if limit else specs
+
+    def unavailable_tools(self) -> list[dict[str, Any]]:
+        """What this machine cannot do, so an agent asks instead of improvising (4.7)."""
+        if self.capabilities is None:
+            return []
+        return [hidden.to_json() for hidden in self.capabilities.hidden()]
 
     def risk_tier(self, action_name: str) -> str:
         act = self._actions.get(action_name)
@@ -286,6 +330,10 @@ class ActionRegistry:
                 "danger": a.danger,
                 "requires_confirm": a.requires_confirm,
                 "description": a.description,
+                # The parameter schema belongs in the catalogue: it is what the model is
+                # given and what the call is validated against, so a catalogue without it
+                # would describe a tool that cannot be called.
+                "parameters": a.parameters or {"type": "object", "properties": {}},
             }
             for a in (self._actions[n] for n in sorted(self._actions))
         ]
@@ -372,6 +420,37 @@ class ActionRegistry:
             self._record(ctx, name, act.capability, "ok", kwargs, result, started)
             return result
 
+        # 3b. journal: the intention is on disk before the side effect happens (4.5). A crash
+        # between these two lines is exactly the case reconciliation exists for.
+        journal = getattr(self, "journal", None)
+        entry_id = 0
+        if journal is not None:
+            intent = intent_for(name, act.capability, kwargs, ctx, getattr(act, "danger", ""))
+            if intent.idempotency_key:
+                previous = journal.lookup(intent.idempotency_key)
+                if previous is not None and previous.state == COMMITTED:
+                    # Exactly-once: this action already ran, so its recorded outcome is the
+                    # answer. Executing again would duplicate a message, a payment or a write.
+                    replay = ActionResult.success(
+                        previous.outcome,
+                        evidence={**previous.evidence, "replayed": True, "journal_entry": previous.entry_id},
+                    )
+                    replay.duration = time.time() - started
+                    self._record(ctx, name, act.capability, "ok", kwargs, replay, started)
+                    self.bus.emit(
+                        ACTION_RESULT,
+                        source=ctx.agent_id,
+                        severity="info",
+                        action=name,
+                        capability=act.capability,
+                        ok=True,
+                        replayed=True,
+                        detail="already executed; returned the journaled outcome",
+                    )
+                    return replay
+            entry_id = journal.begin(intent)
+            journal.mark_running(entry_id)
+
         # 4. execute
         self.bus.emit(
             ACTION_INVOKED,
@@ -402,6 +481,9 @@ class ActionRegistry:
                 {"traceback": traceback.format_exc(limit=3)},
             )
         result.duration = time.time() - started
+        if journal is not None and entry_id:
+            journal.finish(entry_id, result.ok, result.output, result.evidence, result.error)
+        receipt = self._receipt(name, act, ctx, kwargs, result, started)
         self._record(ctx, name, act.capability, "ok" if result.ok else "error", kwargs, result, started)
         self.bus.emit(
             ACTION_RESULT,
@@ -414,6 +496,9 @@ class ActionRegistry:
             detail=result.detail,
             evidence=_brief(result.evidence),
             output=_brief({"v": result.output}),
+            receipt_id=receipt.receipt_id if receipt else "",
+            outcome=receipt.outcome if receipt else "",
+            rung=receipt.rung_name if receipt else "",
         )
         return result
 
@@ -429,6 +514,44 @@ class ActionRegistry:
             or "*" in ctx.confirmed
             or act.name in self.approvals
         )
+
+    def _receipt(
+        self,
+        name: str,
+        act: Action,
+        ctx: ActionContext,
+        kwargs: dict[str, Any],
+        result: ActionResult,
+        started: float,
+    ) -> Receipt | None:
+        """Build, attach and store the evidence receipt for one executed call (4.2).
+
+        A call that never reached a driver (capability denied, confirmation missing, dry run)
+        deliberately produces no receipt: there is no evidence because nothing happened, and
+        the denial event is the record of it.
+        """
+        if not self.receipts_enabled or ctx.dry_run:
+            return None
+        try:
+            receipt = Receipt.build(
+                tool=name,
+                act=act,
+                ctx=ctx,
+                args=kwargs,
+                result=result,
+                started_at=started,
+                risk_tier=self.risk_tier(name),
+            )
+        except Exception:  # a receipt must never break the action it describes
+            return None
+        result.evidence = {**result.evidence, "receipt": receipt.to_json()}
+        self.last_receipt = receipt
+        if self.memory is not None:
+            try:
+                self.memory.store_receipt(receipt.to_json())
+            except Exception:
+                pass
+        return receipt
 
     def _signature(self, act: Action) -> list[str]:
         try:

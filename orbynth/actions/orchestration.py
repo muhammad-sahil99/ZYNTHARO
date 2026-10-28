@@ -13,6 +13,8 @@ import json
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from ..config import expand_capabilities
+from ..events import AGENT_STATUS, HUD_NOTICE, HUD_SCENE, MEMORY_RECALL, MEMORY_WRITE
 from .registry import Action, ActionContext, ActionFailed, action
 
 
@@ -300,6 +302,126 @@ def model_assign(ctx: ActionContext, model: str, agent: str = "", role: str = ""
 
 
 @action(
+    name="agent_set_limits",
+    description=(
+        "Raise or lower an agent's resources and permissions: action count, wall-clock seconds, "
+        "token budget, and its capability set. The Steward uses this to keep a runaway worker on "
+        "a leash, and Sovereign uses it to grant more power. Changes apply immediately and are "
+        "written to the agent's memory so they survive a model swap."
+    ),
+    capability="agent.control",
+    group="orchestration",
+    parameters={
+        "type": "object",
+        "properties": {
+            "agent": {"type": "string", "description": "Agent name or id."},
+            "max_actions": {"type": "integer"},
+            "max_wall_seconds": {"type": "integer"},
+            "max_tokens": {"type": "integer"},
+            "grant_capabilities": {"type": "array", "items": {"type": "string"}},
+            "revoke_capabilities": {"type": "array", "items": {"type": "string"}},
+            "reason": {"type": "string"},
+        },
+        "required": ["agent"],
+    },
+)
+def agent_set_limits(
+    ctx: ActionContext,
+    agent: str,
+    max_actions: int = 0,
+    max_wall_seconds: int = 0,
+    max_tokens: int = 0,
+    grant_capabilities: list[str] | None = None,
+    revoke_capabilities: list[str] | None = None,
+    reason: str = "requested",
+) -> Any:
+    """Enforce limits on another agent. Refuses to widen the caller's own authority."""
+    services = _services()
+    target = services.orchestrator.find(agent)
+    if target is None:
+        raise ActionFailed(f"no such agent: {agent}")
+
+    granted_specs = list(grant_capabilities or [])
+    caller_grants = expand_capabilities(list(ctx.capabilities))
+    escalations = [spec for spec in granted_specs if not _within(caller_grants, spec)]
+    if escalations:
+        raise ActionFailed(
+            f"cannot grant capabilities the caller does not hold: {', '.join(escalations)}",
+            {"caller_capabilities": sorted(caller_grants)[:20], "refused": escalations},
+        )
+
+    # Limits live in the identity's budget dict: an AgentIdentity uses __slots__, so inventing
+    # attributes on it would raise, and the budget dict is what the runtime actually enforces.
+    before = dict(target.identity.budget or {})
+    limits = dict(before)
+    if max_actions:
+        limits["max_actions"] = int(max_actions)
+    if max_wall_seconds:
+        limits["max_wall_seconds"] = int(max_wall_seconds)
+    if max_tokens:
+        limits["max_tokens"] = int(max_tokens)
+    target.identity.budget = limits
+
+    caps = set(target.identity.capabilities)
+    caps.update(expand_capabilities(granted_specs))
+    for spec in revoke_capabilities or []:
+        caps.difference_update(expand_capabilities([spec]))
+    if granted_specs or revoke_capabilities:
+        target.identity.capabilities = frozenset(caps)
+
+    # The runtime budget object is what actually refuses work, so rebuild it around the new
+    # limits rather than leaving a stale one in place that would keep enforcing the old grant.
+    previous_budget = getattr(services.runtime, "budgets", {}).pop(target.id, None)
+    budget = services.runtime.budget_for(target.id, target.identity)
+    for field_name in ("actions", "tokens", "spent_actions", "charged_tokens"):
+        if previous_budget is not None and hasattr(previous_budget, field_name):
+            try:
+                setattr(budget, field_name, getattr(previous_budget, field_name))
+            except Exception:
+                continue
+
+    services.memory.set_agent_limits(
+        target.id,
+        max_actions=budget.max_actions,
+        max_wall_seconds=budget.max_wall_seconds,
+        max_tokens=budget.max_tokens,
+        capabilities=sorted(target.identity.capabilities),
+    )
+    target.remember(
+        f"limits changed by {ctx.agent_id}: actions<={budget.max_actions}, wall<={budget.max_wall_seconds:.0f}s, "
+        f"tokens<={budget.max_tokens}, capabilities={len(target.identity.capabilities)} ({reason})",
+        kind="governance",
+        importance=0.8,
+        tags=["limits"],
+    )
+    services.bus.emit(
+        AGENT_STATUS,
+        source=ctx.agent_id,
+        agent=target.name,
+        agent_id=target.id,
+        status="limits_changed",
+        reason=reason,
+    )
+    return {
+        "agent": target.name,
+        "budget": {
+            "max_actions": budget.max_actions,
+            "max_wall_seconds": budget.max_wall_seconds,
+            "max_tokens": budget.max_tokens,
+        },
+        "capabilities": sorted(target.identity.capabilities),
+        "before": before,
+        "reason": reason,
+    }
+
+
+def _within(caller: frozenset[str], spec: str) -> bool:
+    """Does the caller already hold every capability this spec would grant?"""
+    wanted = expand_capabilities([spec])
+    return wanted <= caller if spec.endswith(".*") or spec == "*" else bool(wanted & caller)
+
+
+@action(
     name="model_health",
     description=(
         "Quota and readiness report for every configured model: rpm/rpd/tpm/tpd usage, "
@@ -346,7 +468,7 @@ def memory_remember(
     services = _services()
     agent_id = ctx.agent_id
     episode = services.memory.remember(agent_id, text, kind=kind, importance=importance, tags=list(tags))
-    services.bus.emit("memory.write", source=agent_id, kind=kind, episode=episode)
+    services.bus.emit(MEMORY_WRITE, source=agent_id, kind=kind, episode=episode)
     return {"stored": True, "episode": episode, "agent_id": agent_id}
 
 
@@ -370,7 +492,7 @@ def memory_recall(ctx: ActionContext, query: str, k: int = 8, agent_id: str = ""
     record = services.memory.get_agent(agent_id or ctx.agent_id)
     team = [record.team_id] if record and record.team_id else []
     hits = services.memory.recall(agent_id or ctx.agent_id, query, k=k, include_teams=team)
-    services.bus.emit("memory.recall", source=ctx.agent_id, query=query[:100], hits=len(hits))
+    services.bus.emit(MEMORY_RECALL, source=ctx.agent_id, query=query[:100], hits=len(hits))
     return {"query": query, "count": len(hits), "hits": [hit.to_json() for hit in hits]}
 
 
@@ -424,7 +546,7 @@ def memory_board(
 def notify_user(ctx: ActionContext, text: str, speak: bool = True, severity: str = "info") -> Any:
     services = _services()
     services.bus.emit(
-        "hud.notice",
+        HUD_NOTICE,
         source=ctx.agent_id,
         severity=severity,
         text=text[:2000],
@@ -459,7 +581,7 @@ def notify_user(ctx: ActionContext, text: str, speak: bool = True, severity: str
 )
 def hud_scene(ctx: ActionContext, kind: str, title: str, payload: dict[str, Any]) -> Any:
     services = _services()
-    services.bus.emit("hud.scene", source=ctx.agent_id, kind=kind, title=title[:200], payload=payload)
+    services.bus.emit(HUD_SCENE, source=ctx.agent_id, kind=kind, title=title[:200], payload=payload)
     return {"opened": True, "kind": kind, "title": title}
 
 
@@ -483,6 +605,7 @@ all_actions = lambda: [  # noqa: E731
     agent_message,
     agent_list,
     agent_terminate,
+    agent_set_limits,
     model_assign,
     model_health,
     fleet_watch,

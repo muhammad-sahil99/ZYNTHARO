@@ -104,6 +104,22 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE INDEX IF NOT EXISTS audit_ts ON audit(ts DESC);
 CREATE INDEX IF NOT EXISTS audit_agent ON audit(agent_id, ts DESC);
 
+CREATE TABLE IF NOT EXISTS receipts (
+    receipt_id TEXT PRIMARY KEY,
+    task_id    TEXT NOT NULL DEFAULT '',
+    agent_id   TEXT NOT NULL DEFAULT '',
+    tool       TEXT NOT NULL,
+    capability TEXT NOT NULL DEFAULT '',
+    outcome    TEXT NOT NULL,          -- VERIFIED | UNVERIFIED | FAILED (spec 4.2)
+    rung       INTEGER NOT NULL DEFAULT 1,
+    target     TEXT NOT NULL DEFAULT '',
+    duration   REAL NOT NULL DEFAULT 0,
+    body       TEXT NOT NULL DEFAULT '{}',
+    ts         REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS receipts_task ON receipts(task_id, ts DESC);
+CREATE INDEX IF NOT EXISTS receipts_tool ON receipts(tool, ts DESC);
+
 CREATE TABLE IF NOT EXISTS tasks (
     task_id     TEXT PRIMARY KEY,
     team_id     TEXT NOT NULL,
@@ -159,6 +175,8 @@ class MemoryHit:
             "text": self.text,
             "tags": self.tags,
             "importance": round(self.importance, 3),
+            "ts": self.ts,
+            # Recall-only fields: they describe this search, not the stored record.
             "age_s": round(self.age_seconds, 1),
             "score": round(self.score, 4),
         }
@@ -382,6 +400,40 @@ class MemoryStore:
                 "UPDATE agents SET status=?, model=?, last_seen=? WHERE agent_id=?",
                 (status, model, time.time(), agent_id),
             )
+        self._conn.commit()
+
+    def set_agent_limits(
+        self,
+        agent_id: str,
+        max_actions: int = 0,
+        max_wall_seconds: int = 0,
+        max_tokens: int = 0,
+        capabilities: list[str] | None = None,
+    ) -> None:
+        """Persist an agent's limits and permissions (contract: a manager can bound a worker).
+
+        Stored in the agent's ``meta`` blob so a limit set by the Steward is still there after a
+        restart or a model swap, instead of living only in the process that applied it.
+        """
+        record = self.get_agent(agent_id)
+        if record is None:
+            return
+        meta = dict(getattr(record, "meta", {}) or {})
+        limits = {
+            "max_actions": int(max_actions or (meta.get("limits") or {}).get("max_actions", 0)),
+            "max_wall_seconds": int(max_wall_seconds or (meta.get("limits") or {}).get("max_wall_seconds", 0)),
+            "max_tokens": int(max_tokens or (meta.get("limits") or {}).get("max_tokens", 0)),
+            "set_at": time.time(),
+        }
+        meta["limits"] = limits
+        sql = "UPDATE agents SET meta=?, last_seen=?"
+        args: list[Any] = [json.dumps(meta), time.time()]
+        if capabilities is not None:
+            sql += ", capabilities=?"
+            args.append(json.dumps(sorted(capabilities)))
+        sql += " WHERE agent_id=?"
+        args.append(agent_id)
+        self._conn.execute(sql, args)
         self._conn.commit()
 
     def _row_to_agent(self, row: sqlite3.Row) -> AgentRecord:
@@ -713,6 +765,66 @@ class MemoryStore:
             }
             for r in rows
         ]
+
+    # ----------------------------------------------------------------------------------
+    # Receipts (spec 4.2): the evidence behind every claim an agent makes
+    # ----------------------------------------------------------------------------------
+    def store_receipt(self, receipt: dict[str, Any]) -> str:
+        """Persist one host-generated receipt. Never written by a plugin or a driver."""
+        receipt_id = str(receipt.get("receipt_id", ""))
+        if not receipt_id:
+            raise ValueError("a receipt without an id is not a receipt")
+        self._conn.execute(
+            """INSERT OR REPLACE INTO receipts
+               (receipt_id, task_id, agent_id, tool, capability, outcome, rung, target, duration, body, ts)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                receipt_id,
+                str(receipt.get("task_id", "")),
+                str(receipt.get("agent_id", "")),
+                str(receipt.get("tool", "")),
+                str(receipt.get("capability", "")),
+                str(receipt.get("outcome", "UNVERIFIED")),
+                int(receipt.get("rung", 1) or 1),
+                str(receipt.get("target", "")),
+                float(receipt.get("duration", 0.0) or 0.0),
+                json.dumps(receipt, default=str),
+                time.time(),
+            ),
+        )
+        self._conn.commit()
+        return receipt_id
+
+    def receipts(
+        self,
+        task_id: str | None = None,
+        limit: int = 50,
+        outcome: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Receipts, newest first, for the Trust Dashboard and the outcome verifier."""
+        clauses: list[str] = []
+        args: list[Any] = []
+        if task_id:
+            clauses.append("task_id=?")
+            args.append(task_id)
+        if outcome:
+            clauses.append("outcome=?")
+            args.append(outcome)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"SELECT body FROM receipts{where} ORDER BY ts DESC LIMIT ?", (*args, int(limit))
+        ).fetchall()
+        return [json.loads(row["body"]) for row in rows]
+
+    def receipt_stats(self, task_id: str | None = None) -> dict[str, Any]:
+        sql = "SELECT outcome, COUNT(*) AS n FROM receipts"
+        args: tuple[Any, ...] = ()
+        if task_id:
+            sql += " WHERE task_id=?"
+            args = (task_id,)
+        rows = self._conn.execute(sql + " GROUP BY outcome", args).fetchall()
+        counts = {str(row["outcome"]): int(row["n"]) for row in rows}
+        return {"by_outcome": counts, "total": sum(counts.values())}
 
     def prune_audit(self, keep_days: int = 90) -> int:
         cutoff = time.time() - keep_days * 86_400

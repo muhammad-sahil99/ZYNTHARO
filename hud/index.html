@@ -8,49 +8,103 @@
 </head>
 <body>
 <div id="app" class="boot">
-  <!-- ============ CORE CANVASES ============ -->
+
+  <!-- ======================= DRAW LAYERS, BACK TO FRONT ======================= -->
+  <!-- 1. the technical backdrop: perspective grid, rulers, scrolling telemetry columns -->
+  <canvas id="grid" class="layer gridlayer"></canvas>
+  <!-- 2. the instrument cage drawn around the core -->
+  <canvas id="chrome" class="layer chrome"></canvas>
+  <!-- 3. the particle core itself -->
   <canvas id="core" class="layer core"></canvas>
+  <!-- 4. the fleet wiring, over everything but the panels -->
   <canvas id="wires" class="layer wires"></canvas>
+
+  <div id="holo-overlay" aria-hidden="true"></div>
   <div class="vignette"></div>
   <div class="scanline"></div>
+  <div id="scanbar" class="scanbar"></div>
 
-  <!-- ============ TOP BAR ============ -->
-  <header class="topbar glass">
-    <div class="brand">
-      <span class="glyph">◉</span>
-      <div class="brand-text">
+  <!-- machined frame: corner brackets, edge ticks, rivets -->
+  <div class="bezel" aria-hidden="true">
+    <i class="bk tl"></i><i class="bk tr"></i><i class="bk bl"></i><i class="bk br"></i>
+    <span class="edge-ticks top"></span><span class="edge-ticks bottom"></span>
+    <span class="edge-ticks left"></span><span class="edge-ticks right"></span>
+  </div>
+
+  <!-- ======================= TITLE PLATE ======================= -->
+  <header id="titleplate" class="titleplate">
+    <div class="plate-side plate-left">
+      <div class="mini-head"><span>SYSTEM DIAGNOSTICS</span><i></i></div>
+      <canvas class="w" data-widget="matrix" data-source="channels" width="132" height="46"></canvas>
+      <div class="tiny-lines" id="diag-lines">
+        <span data-lane="sensor">sensor bus ......... nominal</span>
+        <span data-lane="input">input stack ........ armed</span>
+        <span data-lane="vision">vision pipeline .... ready</span>
+      </div>
+    </div>
+
+    <div class="wordmark">
+      <canvas id="emblem" width="46" height="46"></canvas>
+      <div class="word-stack">
         <h1>ORBYNTH</h1>
         <small id="tagline">desktop operative · vision · input · browser · files · office · self-extending</small>
       </div>
     </div>
 
-    <div class="vitals">
-      <div class="vital" title="Live link to the core">
-        <span class="label">LINK</span>
-        <span id="link-state" class="value">connecting…</span>
+    <div class="plate-side plate-right">
+      <div class="sig-block" aria-hidden="true">
+        <div class="sig-row">
+          <span class="sig-label">SYS.AUDIO</span>
+          <canvas data-wave="audio" width="168" height="20"></canvas>
+          <span id="sig-audio" class="sig-value">idle</span>
+        </div>
+        <div class="sig-row">
+          <span class="sig-label">TOOL.TRAFFIC</span>
+          <canvas data-wave="traffic" width="168" height="20"></canvas>
+          <span id="sig-traffic" class="sig-value">idle</span>
+        </div>
       </div>
-      <div class="vital" title="Sovereign model">
-        <span class="label">MODEL</span>
-        <span id="model-state" class="value">—</span>
-      </div>
-      <div class="vital" title="Agents online">
-        <span class="label">AGENTS</span>
-        <span id="agent-count" class="value">0</span>
-      </div>
-      <div class="vital" title="Capabilities registered">
-        <span class="label">ACTIONS</span>
-        <span id="action-count" class="value">0</span>
-      </div>
-      <div class="vital" title="Quota pressure across the fleet">
-        <span class="label">QUOTA</span>
-        <span id="quota-state" class="value">ok</span>
-      </div>
-      <div class="vital" title="Memory: episodes / facts / tasks">
-        <span class="label">MEMORY</span>
-        <span id="memory-state" class="value">0 / 0 / 0</span>
+      <div class="dialbank">
+        <div class="dial">
+          <canvas data-gauge="fleet" data-label="fleet load" width="66" height="66"></canvas>
+        </div>
+        <div class="dial">
+          <canvas data-gauge="quota" data-label="quota" width="66" height="66"></canvas>
+        </div>
+        <div class="dial">
+          <canvas data-gauge="memory" data-label="memory" width="66" height="66"></canvas>
+        </div>
       </div>
     </div>
+  </header>
 
+  <!-- ======================= VITALS STRIP ======================= -->
+  <div class="vitals-row">
+    <div class="vital" title="Live link to the core">
+      <span class="label">LINK</span>
+      <span id="link-state" class="value">connecting…</span>
+    </div>
+    <div class="vital" title="Sovereign model">
+      <span class="label">MODEL</span>
+      <span id="model-state" class="value">—</span>
+    </div>
+    <div class="vital" title="Agents online">
+      <span class="label">AGENTS</span>
+      <span id="agent-count" class="value">0</span>
+    </div>
+    <div class="vital" title="Capabilities registered">
+      <span class="label">ACTIONS</span>
+      <span id="action-count" class="value">0</span>
+    </div>
+    <div class="vital" title="Quota pressure across the fleet">
+      <span class="label">QUOTA</span>
+      <span id="quota-state" class="value">ok</span>
+    </div>
+    <div class="vital" title="Memory: episodes / facts / tasks">
+      <span class="label">MEMORY</span>
+      <span id="memory-state" class="value">0 / 0 / 0</span>
+    </div>
+    <div class="vitals-spacer"></div>
     <div class="top-actions">
       <button id="voice-toggle" class="pill live" title="Toggle the microphone (voice is the default interface)">
         <span class="dot"></span><span id="voice-label">VOICE LIVE</span>
@@ -62,9 +116,10 @@
           <div class="menu-title">Interface</div>
           <label class="menu-item"><input type="checkbox" id="m-chat" /> Chat input (voice is default)</label>
           <label class="menu-item"><input type="checkbox" id="m-chat-panel" checked /> Transcript panel</label>
-          <label class="menu-item"><input type="checkbox" id="m-agents" checked /> Agent graph</label>
-          <label class="menu-item"><input type="checkbox" id="m-panels" checked /> Side panels</label>
+          <label class="menu-item"><input type="checkbox" id="m-agents" checked /> Fleet + diagnostics</label>
+          <label class="menu-item"><input type="checkbox" id="m-panels" checked /> Console panels</label>
           <label class="menu-item"><input type="checkbox" id="m-wires" checked /> Live wiring</label>
+          <label class="menu-item"><input type="checkbox" id="m-grid" checked /> System grid</label>
           <label class="menu-item"><input type="checkbox" id="m-webgl" checked /> Particle core</label>
           <label class="menu-item"><input type="checkbox" id="m-speak" checked /> Speak replies aloud</label>
           <label class="menu-item"><input type="checkbox" id="m-mic" /> Browser microphone (speech input)</label>
@@ -82,11 +137,19 @@
         </div>
       </div>
     </div>
-  </header>
+  </div>
 
-  <!-- ============ LEFT: AGENTS ============ -->
-  <aside id="agents-panel" class="panel left glass">
-    <h2>Fleet <span id="team-count" class="chip">0 teams</span></h2>
+  <!-- ======================= LEFT STACK ======================= -->
+  <aside id="agents-panel" class="panel stack left">
+    <div class="block-head"><span>Diagnostics</span><i></i><span class="chip">live</span></div>
+    <div class="widget-row">
+      <canvas class="w" data-widget="radar" data-source="fleet" width="104" height="104"></canvas>
+      <canvas class="w" data-widget="hex" data-source="topology" width="104" height="104"></canvas>
+    </div>
+    <div class="widget-row">
+      <canvas class="w" data-widget="spark" data-source="traffic" width="212" height="46"></canvas>
+    </div>
+    <div class="block-head"><span>Fleet</span><i></i><span id="team-count" class="chip">0 teams</span></div>
     <div id="agents" class="agents"></div>
     <div class="panel-foot">
       <button id="spawn-agent" class="pill tiny">+ spawn operative</button>
@@ -94,15 +157,54 @@
     </div>
   </aside>
 
-  <!-- ============ RIGHT: PANELS ============ -->
-  <aside id="side-panels" class="panel right glass">
+  <aside class="panel stack left-lower" data-stack="fleet">
+    <div class="block-head"><span>Telemetry matrix</span><i></i></div>
+    <canvas class="w" data-widget="cells" data-source="memory" width="248" height="54"></canvas>
+    <div class="block-head"><span>Model envelope</span><i></i></div>
+    <canvas class="w" data-widget="bars" data-source="quota" width="248" height="62"></canvas>
+    <div class="block-head"><span>Channel lanes</span><i></i></div>
+    <div class="lanes">
+      <div class="lane"><span>vision</span><canvas class="w" data-widget="ladder" data-source="vision" width="34" height="52"></canvas></div>
+      <div class="lane"><span>input</span><canvas class="w" data-widget="ladder" data-source="input" width="34" height="52"></canvas></div>
+      <div class="lane"><span>browser</span><canvas class="w" data-widget="ladder" data-source="browser" width="34" height="52"></canvas></div>
+      <div class="lane"><span>office</span><canvas class="w" data-widget="ladder" data-source="office" width="34" height="52"></canvas></div>
+      <div class="lane"><span>files</span><canvas class="w" data-widget="ladder" data-source="files" width="34" height="52"></canvas></div>
+    </div>
+    <canvas class="w" data-widget="ruler" data-source="load" width="248" height="40"></canvas>
+  </aside>
+
+  <!-- ======================= RIGHT STACK ======================= -->
+  <aside class="panel stack right-upper" data-stack="console">
+    <div class="block-head"><span>Signal analysis</span><i></i><span class="chip">runtime</span></div>
+    <canvas class="w" data-widget="spark" data-source="actions" width="248" height="52"></canvas>
+    <div class="sig-row wide">
+      <span class="sig-label">MEM.STREAM</span>
+      <canvas data-wave="memory" width="176" height="20"></canvas>
+      <span id="sig-memory" class="sig-value">idle</span>
+    </div>
+    <div class="sig-row wide">
+      <span class="sig-label">JOB.LANES</span>
+      <canvas data-wave="jobs" width="176" height="20"></canvas>
+      <span id="sig-jobs" class="sig-value">idle</span>
+    </div>
+  </aside>
+
+  <aside id="side-panels" class="panel stack right">
     <nav class="tabs">
       <button data-tab="transcript" class="tab active">Transcript</button>
       <button data-tab="quota" class="tab">Quotas</button>
       <button data-tab="plugins" class="tab">Plugins</button>
       <button data-tab="actions" class="tab">Actions</button>
+      <button data-tab="checks" class="tab">Checks</button>
+      <button data-tab="jobs" class="tab">Jobs</button>
+      <button data-tab="security" class="tab">Security</button>
+      <button data-tab="updates" class="tab">Models</button>
+      <button data-tab="machine" class="tab">Machine</button>
       <button data-tab="drivers" class="tab">Drivers</button>
       <button data-tab="memory" class="tab">Memory</button>
+      <button data-tab="hardware" class="tab">Hardware</button>
+      <button data-tab="index" class="tab">Index</button>
+      <button data-tab="matrix" class="tab">Matrix</button>
     </nav>
 
     <section data-panel="transcript" class="tab-panel active">
@@ -128,6 +230,31 @@
       <div id="action-log" class="log"></div>
     </section>
 
+    <section data-panel="checks" class="tab-panel">
+      <p class="hint">Outcome checks. Each task carries success criteria written before it started, and a separate verifier tests the finished state against them: what was asked, not what the agent claims.</p>
+      <div id="verdicts" class="plugins"></div>
+    </section>
+
+    <section data-panel="jobs" class="tab-panel">
+      <p class="hint">Owned processes. Helpers — the WhatsApp sidecar, automation browsers, workers — are supervised: they die with the app, and orphans from a previous run are reconciled at start.</p>
+      <div id="jobs" class="table"></div>
+    </section>
+
+    <section data-panel="security" class="tab-panel">
+      <p class="hint">Owner identity. Irreversible work (delete, send, call, install, macro, shell) needs your PIN; a voice match alone never authorises it, because voices can be cloned. Profiles are per OS user, so a shared PC has two owners.</p>
+      <div id="security" class="table"></div>
+    </section>
+
+    <section data-panel="updates" class="tab-panel">
+      <p class="hint">Model knowledge is a signed catalogue, applied only between actions and rollback-able in one command. Who pays (BYOK by default) is shown here too.</p>
+      <div id="updates" class="table"></div>
+    </section>
+
+    <section data-panel="machine" class="tab-panel">
+      <p class="hint">Courtesy to your machine: ORBYNTH runs below your interactive priority and yields during games, calls and presentations. Work you asked for right now is never paused.</p>
+      <div id="machine" class="table"></div>
+    </section>
+
     <section data-panel="drivers" class="tab-panel">
       <p class="hint">What can physically execute on this machine. Missing drivers are reported, never faked.</p>
       <div id="drivers" class="table"></div>
@@ -141,15 +268,52 @@
       <div id="memory-results" class="log"></div>
       <div id="audit-log" class="log"></div>
     </section>
+
+    <section data-panel="hardware" class="tab-panel">
+      <p class="hint">Hardware monitor — a deterministic service, not the model. Every number is a real reading from this machine; a sensor that cannot be read says so instead of showing a plausible default.</p>
+      <div class="row">
+        <button id="hw-refresh" class="pill tiny">refresh</button>
+        <span id="hw-overhead" class="sig-value">measuring…</span>
+      </div>
+      <div id="hardware" class="table"></div>
+      <div id="hardware-alerts" class="plugins"></div>
+      <div id="hardware-gaps" class="log"></div>
+    </section>
+
+    <section data-panel="index" class="tab-panel">
+      <p class="hint">Local search over the folders you added. Lexical (FTS5) — no embeddings in this build, and it says so. Every hit is re-checked on disk before it is shown.</p>
+      <div class="row">
+        <input id="search-query" placeholder="search your files…" />
+        <button id="search-btn" class="pill tiny">search</button>
+      </div>
+      <div class="row">
+        <input id="index-root" placeholder="folder to index…" />
+        <button id="index-add" class="pill tiny">add</button>
+        <button id="index-update" class="pill tiny">scan</button>
+      </div>
+      <div id="search-results" class="log"></div>
+      <div id="index-status" class="table"></div>
+    </section>
+
+    <section data-panel="matrix" class="tab-panel">
+      <p class="hint">Capability Matrix: every tool the system can call, and whether it has been proven on this machine. “provisional” means declared and drivable but never run here — not a claim of working.</p>
+      <div id="capability-summary" class="chips"></div>
+      <div id="capabilities" class="table"></div>
+    </section>
   </aside>
 
-  <!-- ============ CONFIRMATIONS ============ -->
-  <div id="confirmations" class="confirmations"></div>
+  <aside class="panel stack right-lower" data-stack="console">
+    <div class="block-head"><span>Memory stream</span><i></i><span class="chip">persistent</span></div>
+    <canvas class="w" data-widget="bars" data-source="memory" width="248" height="58"></canvas>
+    <div class="block-head"><span>Process load</span><i></i></div>
+    <canvas class="w" data-widget="ruler" data-source="jobs" width="248" height="38"></canvas>
+  </aside>
 
-  <!-- ============ NOTICES ============ -->
+  <!-- ======================= CONFIRMATIONS & NOTICES ======================= -->
+  <div id="confirmations" class="confirmations"></div>
   <div id="notices" class="notices"></div>
 
-  <!-- ============ SCENE VIEWER ============ -->
+  <!-- ======================= SCENE VIEWER ======================= -->
   <div id="scene" class="scene glass hidden">
     <header class="scene-head">
       <span id="scene-title">Scene</span>
@@ -161,21 +325,39 @@
     <div id="scene-body" class="scene-body"></div>
   </div>
 
-  <!-- ============ CHAT (optional, off by default) ============ -->
+  <!-- ======================= CHAT (optional, off by default) ======================= -->
   <div id="chatbar" class="chatbar glass hidden">
     <input id="chat-input" placeholder="Type instead of speaking…  (⌘/Ctrl + K)" autocomplete="off" />
     <button id="chat-send" class="pill">send</button>
     <span class="chat-note">voice-first · chat available from the menu</span>
   </div>
 
-  <!-- ============ CORE STATE LABEL ============ -->
+  <!-- ======================= SIGNAL FLOOR ======================= -->
+  <div class="base-strip glass" aria-hidden="true">
+    <span class="sig-label">SYS.AUDIO ACTIVE</span>
+    <canvas data-wave="audio" width="620" height="30"></canvas>
+    <div class="floor-meters">
+      <div class="floor-meter"><span>LATENCY</span><canvas class="w" data-widget="ruler" data-source="latency" width="120" height="26"></canvas></div>
+      <div class="floor-meter"><span>TOKENS</span><canvas class="w" data-widget="bars" data-source="tokens" width="120" height="26"></canvas></div>
+    </div>
+    <span id="floor-state" class="sig-value">idle</span>
+    <!-- Hardware monitor (spec 16). The text is written only by a real alert; nothing here is
+         a placeholder reading, so an idle machine shows the word and no fabricated numbers. -->
+    <span id="hw-alert" class="sig-value" data-severity="">no hardware alerts</span>
+  </div>
+
+  <!-- ======================= CORE STATE LABEL ======================= -->
   <div class="core-label">
     <span id="core-state">idle</span>
     <small id="core-sub">awaiting instruction</small>
   </div>
 </div>
 
+<script src="effects.js"></script>
+<script src="grid.js"></script>
 <script src="particle-core.js"></script>
+<script src="chrome.js"></script>
+<script src="widgets.js"></script>
 <script src="wires.js"></script>
 <script src="mock.js"></script>
 <script src="app.js"></script>

@@ -17,7 +17,7 @@ from .. import __alternate_brand__, __product__, __tagline__, __version__
 from ..actions.registry import ActionRegistry
 from ..actions import driver_report
 from ..config import AppConfig
-from ..events import LOG, VOICE_SPEAKING, VOICE_TRANSCRIPT, EventBus
+from ..events import HUD_NOTICE, LOG, VOICE_SPEAKING, VOICE_TRANSCRIPT, EventBus
 from ..memory import MemoryStore
 from .bridge import HudBridge, Client, open_webview
 
@@ -37,6 +37,13 @@ class HudService:
         plugins: Any = None,
         voice: Any = None,
         static_dir: str | Path | None = None,
+        supervisor: Any = None,
+        owner: Any = None,
+        billing: Any = None,
+        governor: Any = None,
+        verifier: Any = None,
+        sensors: Any = None,
+        index: Any = None,
     ):
         self.config = config
         self.bus = bus
@@ -47,6 +54,21 @@ class HudService:
         self.orchestrator = orchestrator
         self.plugins = plugins
         self.voice = voice
+        # The operational layer, so the interface can show it instead of hiding it (22.1-22.11).
+        self.supervisor = supervisor
+        self.owner = owner
+        self.billing = billing
+        self.governor = governor
+        self.verifier = verifier
+        #: Hardware monitor and local index: shown as measurements, never as decoration.
+        self.sensors = sensors
+        self.index = index
+        #: Recent outcome checks and preflight decisions, newest first.
+        self.verdicts: list[dict[str, Any]] = []
+        self.preflight_log: list[dict[str, Any]] = []
+        self.bus.subscribe("task.verified", self._on_verdict)
+        self.bus.subscribe("task.disputed", self._on_verdict)
+        self.bus.subscribe("task.preflight", self._on_preflight)
         self.static_dir = Path(static_dir) if static_dir else Path(__file__).resolve().parent.parent.parent / "hud"
         self.bridge = HudBridge(
             bus=bus,
@@ -107,7 +129,120 @@ class HudService:
             "memory": self.memory.stats(),
             "pending_confirmations": list(self.registry.pending.values()),
             "transcript": self.transcript[-60:],
+            "jobs": (self.supervisor.inventory()["jobs"] if self.supervisor else []),
+            "verdicts": self.verdicts[:40],
+            "preflight": self.preflight_log[:20],
+            "security": self._security_snapshot(),
+            "updates": self._updates_snapshot(),
+            "machine": self._machine_snapshot(),
+            "hardware": self._hardware_snapshot(),
+            "capabilities": self._capability_snapshot(),
+            "search": self._search_snapshot(),
         }
+
+    def _security_snapshot(self) -> dict[str, Any]:
+        owner = self.owner
+        if owner is None:
+            return {"configured": False, "owner": "", "note": "owner gate not attached"}
+        profile = owner.profile
+        return {
+            "configured": bool(profile.configured),
+            "owner": profile.owner_name if profile.configured else "",
+            "machine_kind": profile.machine_kind,
+            "os_user": profile.os_user,
+            "foreign_profile": owner.foreign_profile(),
+            "voice_prints": len(profile.voice_prints),
+            "recovery_available": bool(profile.recovery_hash),
+            "session_valid": owner.session_valid(),
+            "session_remaining_s": round(owner.session_remaining(), 1),
+            "locked_out": owner.locked_out(),
+            "irreversible_needs": "pin",
+        }
+
+    def _updates_snapshot(self) -> dict[str, Any]:
+        catalogue = self.config.catalog
+        snapshot: dict[str, Any] = {
+            "mode": self.billing.mode if self.billing else self.config.billing.mode,
+            "catalog_path": catalogue.path,
+            "catalog_version": "loaded" if catalogue.path else "none loaded",
+        }
+        if self.billing is not None:
+            issues = self.billing.audit(self.config)
+            snapshot["billing_issues"] = [i.code for i in issues]
+            snapshot["armable"] = self.billing.armable(self.config)
+            snapshot["spend_today_usd"] = round(self.billing.global_usage.spend_usd, 4)
+            snapshot["requests_today"] = self.billing.global_usage.requests
+        return snapshot
+
+    def _machine_snapshot(self) -> dict[str, Any]:
+        from ..ops.languages import LANGUAGES, LTR, ocr_languages
+        from ..ops.preflight import MachineState
+
+        state = MachineState.detect()
+        snapshot = state.to_json()
+        snapshot["priority"] = getattr(self.governor, "_priority", "normal") if self.governor else "normal"
+        if self.governor is not None:
+            snapshot["paused"] = self.governor.evaluate().paused
+            # Give the interface the reason the machine is being left alone, so "deferred"
+            # finally has a cause to show instead of an unexplained pause.
+            snapshot["busy_reason"] = snapshot.get("busy_reason") or self.governor.busy_reason()
+        languages = [self.config.voice.language, *self.config.voice.secondary_languages]
+        snapshot["languages"] = ", ".join(languages) + " (ocr: " + ocr_languages(languages) + ")"
+        # Direction of the interface itself (contract 22.11). A right-to-left language is not
+        # a translation: the chrome has to lay out mirrored, or the HUD is wrong for Urdu and
+        # Arabic users while pretending to support them.
+        snapshot["language_dir"] = LANGUAGES.get(languages[0], LANGUAGES["en"]).direction if languages else LTR
+        return snapshot
+
+    def _hardware_snapshot(self) -> dict[str, Any]:
+        if self.sensors is None:
+            return {"attached": False, "note": "the sensor monitor is not running on this machine"}
+        try:
+            summary = self.sensors.summary()
+            summary["attached"] = True
+            summary["report"] = self.sensors.sensor_report()
+            return summary
+        except Exception as exc:  # noqa: BLE001 - a broken panel must not break the HUD
+            return {"attached": False, "note": f"sensor monitor error: {type(exc).__name__}: {exc}"}
+
+    def _capability_snapshot(self) -> dict[str, Any]:
+        """The Capability Matrix, so the interface can say what is proven and what is not."""
+        matrix = getattr(self.registry, "capabilities", None)
+        if matrix is None:
+            return {"attached": False, "rows": []}
+        try:
+            data = matrix.to_json()
+        except Exception as exc:  # noqa: BLE001
+            return {"attached": False, "error": f"{type(exc).__name__}: {exc}", "rows": []}
+        rows = data.get("tools", [])
+        return {
+            "attached": True,
+            "summary": data.get("summary", {}),
+            "rows": rows[:400],
+            "warnings": data.get("warnings", []),
+        }
+
+    def _search_snapshot(self) -> dict[str, Any]:
+        if self.index is None:
+            return {"attached": False, "note": "the local index is not attached"}
+        try:
+            status = self.index.status()
+            status["attached"] = True
+            return status
+        except Exception as exc:  # noqa: BLE001
+            return {"attached": False, "note": f"index error: {type(exc).__name__}: {exc}"}
+
+    def _on_verdict(self, event: Any) -> None:
+        payload = dict(event.payload or {})
+        payload["at"] = event.ts
+        self.verdicts.insert(0, payload)
+        self.verdicts = self.verdicts[:60]
+
+    def _on_preflight(self, event: Any) -> None:
+        payload = dict(event.payload or {})
+        payload["at"] = event.ts
+        self.preflight_log.insert(0, payload)
+        self.preflight_log = self.preflight_log[:40]
 
     # ----------------------------------------------------------------------------------
     # Routing user intent from the HUD
@@ -127,7 +262,17 @@ class HudService:
             "agent.terminate": self._terminate_agent,
             "model.assign": self._assign_model,
             "state.request": lambda _m: self.snapshot(),
+            "owner.unlock": self._owner_unlock,
+            "owner.status": lambda _m: self._security_snapshot(),
+            "jobs.stop": self._jobs_stop,
             "memory.search": self._memory_search,
+            "hw.query": self._hw_query,
+            "hw.alerts": self._hw_alerts,
+            "index.search": self._index_search,
+            "index.update": self._index_update,
+            "index.add": self._index_add,
+            "index.sources": lambda _m: self.index.sources() if self.index else [],
+            "capability.matrix": lambda _m: self._capability_snapshot(),
             "audit": self._audit,
         }.get(kind)
         if handler is None:
@@ -173,6 +318,30 @@ class HudService:
         items = message.get("items") or []
         if not objective:
             raise ValueError("objective is required")
+        # Preflight first: a task submitted to a locked desktop is deferred with a reason the
+        # user can read, not queued silently or run against a screen nobody can see (22.2).
+        if self.orchestrator is not None and getattr(self.orchestrator, "preflight", None) is not None:
+            from ..ops.preflight import TaskRequirements
+
+            requirements = TaskRequirements(
+                gui=bool(message.get("needs_gui", False)),
+                unlocked_session=bool(message.get("needs_gui", False)),
+                user_present=bool(message.get("needs_user", False)),
+                power=bool(message.get("needs_power", False)),
+                network=self.config.safety.allow_network,
+                background_ok=bool(message.get("background_ok", True)),
+            )
+            decision = self.orchestrator.preflight_task(requirements, origin=str(message.get("origin", "user_request")))
+            if decision is not None and not decision.can_run:
+                self.bridge.notify(
+                    f"held back ({decision.action}): {'; '.join(decision.reasons)}", severity="warning", speak=False
+                )
+                return {
+                    "accepted": False,
+                    "action": decision.action,
+                    "reasons": decision.reasons,
+                    "advice": decision.advice,
+                }
         if items:
             result = self.orchestrator.run_team(
                 objective,
@@ -227,7 +396,7 @@ class HudService:
         approved = bool(message.get("approved", True))
         self.registry.approve(action, approved)
         self.bus.emit(
-            "hud.notice",
+            HUD_NOTICE,
             source="user",
             text=f"{'approved' if approved else 'denied'} confirmation for {action}",
             speak=False,
@@ -279,6 +448,35 @@ class HudService:
             raise ValueError("agent not found")
         return self.orchestrator.assign_model(target.id, str(message.get("model", "")), "HUD request")
 
+    def _owner_unlock(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Unlock an owner session with the PIN so irreversible work can be approved.
+
+        Without this the owner gate would make the GUI unable to do anything risky at all,
+        which is not security, it is a dead end.
+        """
+        if self.owner is None:
+            raise ValueError("owner gate is not attached")
+        if not self.owner.profile.configured:
+            raise ValueError("no owner yet: run `orbynth owner setup` in a terminal")
+        pin = str(message.get("pin", ""))
+        if not self.owner.verify_pin(pin):
+            self.bridge.notify("PIN rejected.", severity="warning", speak=False)
+            return {"unlocked": False, "locked_out": self.owner.locked_out()}
+        self.bridge.notify("Owner session open.", severity="info", speak=False)
+        self.bridge.push_state()
+        return {"unlocked": True, "seconds": round(self.owner.session_remaining(), 1)}
+
+    def _jobs_stop(self, message: dict[str, Any]) -> dict[str, Any]:
+        if self.supervisor is None:
+            raise ValueError("no supervisor attached")
+        target = str(message.get("job_id", "")) or str(message.get("name", ""))
+        job = next((j for j in self.supervisor.jobs.values() if j.job_id == target or j.name == target), None)
+        if job is None:
+            raise ValueError(f"no such job: {target}")
+        stopped = self.supervisor.stop(job.job_id, force=bool(message.get("force", False)), reason="HUD request")
+        self.bridge.push_state()
+        return {"stopped": stopped, "job": job.name}
+
     def _memory_search(self, message: dict[str, Any]) -> dict[str, Any]:
         query = str(message.get("query", ""))
         agent_id = str(message.get("agent_id", "")) or None
@@ -290,6 +488,50 @@ class HudService:
             merged.sort(key=lambda row: row["score"], reverse=True)
             hits = merged[: int(message.get("k", 10))]
         return {"query": query, "hits": [hit.to_json() if hasattr(hit, "to_json") else hit for hit in hits]}
+
+    def _hw_query(self, message: dict[str, Any]) -> dict[str, Any]:
+        if self.sensors is None:
+            raise ValueError("the sensor monitor is not running")
+        sensors = [str(item) for item in (message.get("sensors") or [])] or None
+        return self.sensors.query(sensors, float(message.get("window", 60.0)))
+
+    def _hw_alerts(self, message: dict[str, Any]) -> dict[str, Any]:
+        if self.sensors is None:
+            raise ValueError("the sensor monitor is not running")
+        return {"alerts": self.sensors.recent_alerts(int(message.get("limit", 20)))}
+
+    def _index_search(self, message: dict[str, Any]) -> dict[str, Any]:
+        if self.index is None:
+            raise ValueError("the local index is not attached")
+        query = str(message.get("query", "")).strip()
+        if not query:
+            raise ValueError("a search needs a query")
+        return self.index.search(query, limit=int(message.get("limit", 20)))
+
+    def _index_update(self, message: dict[str, Any]) -> dict[str, Any]:
+        if self.index is None:
+            raise ValueError("the local index is not attached")
+        return self.index.update(
+            source=str(message.get("source") or "") or None,
+            limit=int(message.get("limit", 2_000)),
+            batch=200,
+            sleep=0.01,
+        )
+
+    def _index_add(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Adding a search source is an owner action: the HUD asks for the PIN, not a checkbox."""
+        if self.index is None:
+            raise ValueError("the local index is not attached")
+        kind = str(message.get("kind", "files"))
+        if kind in ("email", "whatsapp", "browser_history", "clipboard"):
+            if self.owner is not None and not self.owner.session_valid():
+                raise ValueError(f"{kind} is personal data: unlock with your PIN before adding it")
+        return self.index.add_source(
+            str(message.get("name", "docs")),
+            str(message.get("root", "")),
+            kind=kind,
+            opt_in=bool(message.get("opt_in", False)),
+        )
 
     def _audit(self, message: dict[str, Any]) -> dict[str, Any]:
         return {"entries": self.memory.audit_log(limit=int(message.get("limit", 100)))}

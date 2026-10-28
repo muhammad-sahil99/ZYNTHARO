@@ -43,7 +43,7 @@ class CapacityPlan:
     created_at: float = field(default_factory=time.time)
 
     def to_json(self) -> dict[str, Any]:
-        return asdict(self)
+        return {**asdict(self), "one_line": self.one_line()}
 
     def one_line(self) -> str:
         mode = "parallel" if self.parallel else "one at a time"

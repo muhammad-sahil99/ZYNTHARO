@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from ..actions.registry import ActionRegistry
-from ..events import PLUGIN_AUTHORED, EventBus
+from ..events import PLUGIN_AUTHORED, PLUGIN_FAILED, EventBus
 from ..llm.providers import LLMRequest, Message, ToolSpec
 from ..llm.runtime import ModelRuntime, Requirements
 from .loader import MANIFEST_NAME, PluginHost, PluginManifest
@@ -146,7 +146,7 @@ class Forge:
             )
             spec = self._parse_spec(result.response.text, name, capabilities)
         except Exception as exc:  # noqa: BLE001 - a forge run must never crash the fleet
-            self.bus.emit("plugin.failed", source="forge", severity="warning", stage="design", error=str(exc)[:300])
+            self.bus.emit(PLUGIN_FAILED, source="forge", severity="warning", stage="design", error=str(exc)[:300])
         if spec is None or not spec.actions:
             spec = self._fallback_spec(need, name, capabilities)
         self.bus.emit(PLUGIN_AUTHORED, source="artificer", name=spec.name, actions=[a.name for a in spec.actions], needs_review=False)

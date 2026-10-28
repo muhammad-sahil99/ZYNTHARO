@@ -59,6 +59,9 @@ class PluginManifest:
     source: str = "forged"  # forged | manual | imported
     task: str = ""
     runtime: str = ""  # e.g. "chrome:profile=default" for browser-bound plugins
+    #: Contract name -> semantic version this plugin was authored against (spec 3.4).
+    #: Empty means the plugin predates contract versioning, which is a warning, not a lie.
+    contracts: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -139,6 +142,21 @@ class PluginHost:
             return ValidationResult(False, [f"{MANIFEST_NAME} is not valid JSON: {exc}"])
         if manifest.schema_version != SCHEMA_VERSION:
             errors.append(f"unsupported schema_version {manifest.schema_version} (expected {SCHEMA_VERSION})")
+        # Declared contract versions (spec 3.4): a plugin written against an interface this
+        # build cannot serve is refused here, at install time, instead of failing in the middle
+        # of a user's task. An unparsable or unknown contract name is refused for the same reason.
+        try:
+            from ..contracts.compat import REFUSE, WARN, check_manifest
+
+            for compat in check_manifest(manifest.contracts):
+                if compat.decision == REFUSE:
+                    errors.append(
+                        f"targets {compat.contract} {compat.produced}, which this build cannot serve: {compat.reason}"
+                    )
+                elif compat.decision == WARN:
+                    warnings.append(f"{compat.contract}: {compat.reason}")
+        except Exception as exc:  # a broken contract registry must not silently pass a plugin
+            errors.append(f"contract versions could not be checked: {exc}")
         if not manifest.name.replace("-", "").replace("_", "").isalnum():
             errors.append("name must be alphanumeric with - or _")
         module_path = directory / manifest.entry

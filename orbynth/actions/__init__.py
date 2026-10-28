@@ -16,11 +16,15 @@ from ..llm.providers import ToolSpec
 from . import (
     browser,
     filesystem,
+    hardware,
     input_control,
+    localsearch,
     office,
+    office_files,
     orchestration,
     registry as registry_module,
     shell,
+    terminal,
     vision,
     whatsapp,
     windows,
@@ -41,10 +45,14 @@ DRIVER_MODULES = (
     registry_module,
     filesystem,
     shell,
+    terminal,
+    hardware,
     input_control,
+    localsearch,
     vision,
     windows,
     office,
+    office_files,
     browser,
     whatsapp,
     orchestration,
@@ -56,8 +64,15 @@ def build_registry(
     bus: EventBus | None = None,
     memory: Any = None,
     services: orchestration.Services | None = None,
+    capabilities: bool = True,
 ) -> ActionRegistry:
-    """Assemble every action into one registry and wire orchestration services."""
+    """Assemble every action into one registry and wire orchestration services.
+
+    A Capability Matrix is attached by default (spec 4.7): it is what stops a tool whose
+    driver is missing on this machine from being offered to a model at all, and what labels
+    the tools nobody has proven yet. Pass ``capabilities=False`` only to inspect the raw
+    declared surface, for example in the matrix generator itself.
+    """
     registry = ActionRegistry(bus=bus, memory=memory, config=config)
     for module in DRIVER_MODULES:
         factory = getattr(module, "all_actions", None)
@@ -67,6 +82,13 @@ def build_registry(
             registry.register_module(module)
     if services is not None:
         orchestration.set_services(services)
+    if capabilities:
+        from ..ops.capability import AuditRunStats, CapabilityMatrix
+
+        registry.capabilities = CapabilityMatrix(
+            registry,
+            stats=AuditRunStats(memory) if memory is not None else None,
+        )
     return registry
 
 
@@ -114,10 +136,14 @@ __all__ = [
     "orchestration",
     "filesystem",
     "shell",
+    "terminal",
+    "hardware",
     "input_control",
+    "localsearch",
     "vision",
     "windows",
     "office",
+    "office_files",
     "browser",
     "whatsapp",
 ]

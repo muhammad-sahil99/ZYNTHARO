@@ -1,0 +1,21 @@
+{
+  "note": "Every interface ORBYNTH persists or exposes is listed here with the semantic version of its schema and the definition that implements it. `frozen` means a stored record exists in that shape and a change needs a migration; `draft` means nothing is stored yet and the shape may still move. The runtime refuses a producer whose major version differs from the reader's, and warns on a minor difference (see orbynth/contracts/compat.py).",
+  "policy": {
+    "versioning": "semver: major = an existing reader cannot parse it, minor = additive and readable, patch = documentation or constraint-only",
+    "on_major_mismatch": "refuse, with the two versions and the migration name in the message",
+    "on_minor_mismatch": "accept and warn; unknown fields are preserved, never dropped silently",
+    "migration": "a stored-format change ships a migration and a tested rollback, and the old format stays readable for one release"
+  },
+  "contracts": {
+    "receipt": {"version": "1.0.0", "file": "records.schema.json", "def": "receipt", "status": "frozen", "reader": "MemoryStore.receipts", "writer": "ActionRegistry._receipt"},
+    "journal-entry": {"version": "1.0.0", "file": "records.schema.json", "def": "journal-entry", "status": "frozen", "reader": "Journal.history", "writer": "Journal.begin"},
+    "event": {"version": "1.0.0", "file": "records.schema.json", "def": "event", "status": "frozen", "reader": "hud/bridge.py", "writer": "EventBus.emit"},
+    "tool": {"version": "1.0.0", "file": "records.schema.json", "def": "tool", "status": "frozen", "reader": "ProviderRegistry tool specs", "writer": "ActionRegistry.describe"},
+    "scene": {"version": "1.0.0", "file": "records.schema.json", "def": "scene", "status": "draft", "reader": "hud/app.js", "writer": "actions/orchestration.hud_scene"},
+    "memory-record": {"version": "1.0.0", "file": "records.schema.json", "def": "memory-record", "status": "draft", "reader": "MemoryStore.search", "writer": "MemoryStore.remember"},
+    "task-contract": {"version": "1.0.0", "file": "records.schema.json", "def": "task-contract", "status": "frozen", "reader": "OutcomeVerifier", "writer": "TaskContract.to_json"},
+    "plugin-manifest": {"version": "1.0.0", "file": "interfaces.schema.json", "def": "plugin-manifest", "status": "frozen", "reader": "plugins/loader.py", "writer": "plugins/forge.py"},
+    "native-rpc-request": {"version": "1.0.0", "file": "interfaces.schema.json", "def": "native-rpc-request", "status": "draft", "reader": "sidecars", "writer": "ops/spawn.py"},
+    "native-rpc-response": {"version": "1.0.0", "file": "interfaces.schema.json", "def": "native-rpc-response", "status": "draft", "reader": "ops/spawn.py", "writer": "sidecars"}
+  }
+}

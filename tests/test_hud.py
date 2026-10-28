@@ -9,8 +9,10 @@ from __future__ import annotations
 import base64
 import json
 import os
+import shutil
 import socket
 import struct
+import subprocess
 import time
 import unittest
 import urllib.request
@@ -199,6 +201,110 @@ class BridgeTests(unittest.TestCase):
         self.assertTrue(bus_still_alive.id)
 
 
+class HudCoverageTests(unittest.TestCase):
+    """The interface must have somewhere to put every event the core can emit.
+
+    hud/app.js promises this check; before it existed, the whole operational layer shipped
+    while the interface ignored its topics, so the app looked calm while processes were being
+    terminated and model catalogues applied.
+    """
+
+    def test_every_emitted_topic_reaches_the_interface(self):
+        from tools.hud_coverage import COVERAGE, report
+
+        data = report()
+        self.assertEqual(data["unhandled"], [], f"no HUD effect for: {data['unhandled']}")
+        self.assertEqual(
+            data["literal_topics"], [],
+            "topics must be declared in orbynth/events.py, not written as bare strings: "
+            f"{data['literal_topics']}",
+        )
+        self.assertTrue(data["topics"], "no topics found: the parser is broken, not the code")
+        self.assertTrue(COVERAGE.exists(), "hud/coverage.json is missing; run tools/hud_coverage.py")
+        committed = json.loads(COVERAGE.read_text(encoding="utf-8"))
+        self.assertEqual(committed, data, "hud/coverage.json is stale; run tools/hud_coverage.py")
+
+    def test_demo_data_covers_the_panels_the_interface_renders(self):
+        # The hosted preview has no desktop to automate, so it runs on demo data. If the demo
+        # snapshot drifts from what the panels read, the preview quietly shows empty panels.
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hud", "mock.js")
+        source = open(path, encoding="utf-8").read()
+        for key in (
+            "jobs", "verdicts", "preflight", "security", "updates", "machine",
+            "agents", "quotas", "plugins", "drivers", "memory", "models",
+        ):
+            self.assertIn(f"{key}:", source, f"demo snapshot has no {key}")
+
+
+class HudVisualTests(unittest.TestCase):
+    """The visual layer cannot be screenshotted here, so it is executed headlessly instead.
+
+    ``tools/hud_visual_check.js`` runs the real particle core and chrome modules against a
+    stubbed WebGL context and a recording canvas 2D context. That catches the failures a blank
+    screen hides: a uniform the JavaScript looks up but the shader never declares, an attribute
+    fetched but never bound, a band of the instrument that comes out empty, a projection that is
+    not actually 3D, and an element id app.js reaches for that index.html does not define.
+    """
+
+    @unittest.skipUnless(shutil.which("node"), "node is required to execute the HUD renderers")
+    def test_the_renderers_build_valid_geometry_and_draw(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        result = subprocess.run(
+            [shutil.which("node"), os.path.join(root, "tools", "hud_visual_check.js")],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("HUD visual layer verified", result.stdout)
+
+    def test_the_core_projects_in_three_dimensions_and_the_cage_is_drawn(self):
+        """Static guard: the core must not fall back to scaling x/y by a fake perspective."""
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "hud", "particle-core.js"), encoding="utf-8") as handle:
+            core = handle.read()
+        self.assertIn("uCamZ - v.z", core, "the core has no camera depth term")
+        self.assertIn("gl_Position = vec4(v.x * f / aspect", core)
+        with open(os.path.join(root, "hud", "index.html"), encoding="utf-8") as handle:
+            html = handle.read()
+        self.assertIn('id="chrome"', html, "the instrument cage has no canvas")
+        self.assertIn("chrome.js", html)
+
+    def test_the_console_carries_the_grid_backdrop_and_the_widget_instruments(self):
+        """Static guard: the dense instrument layers must stay part of the document.
+
+        The housing is what makes the console read as an instrument, so a refactor that drops the
+        backdrop, the widget canvases or their wiring should fail here rather than quietly
+        returning the interface to a dashboard with a globe in the middle.
+        """
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        html = open(os.path.join(root, "hud", "index.html"), encoding="utf-8").read()
+        app = open(os.path.join(root, "hud", "app.js"), encoding="utf-8").read()
+        self.assertIn('id="grid"', html, "the system grid has no canvas")
+        self.assertIn("grid.js", html)
+        self.assertIn("widgets.js", html)
+        self.assertGreaterEqual(html.count('data-widget="'), 12, "too few instrument widgets are mounted")
+        self.assertGreaterEqual(html.count('data-gauge="'), 3, "the dial bank is gone")
+        self.assertIn('data-stack="fleet"', html)
+        self.assertIn('data-stack="console"', html)
+        self.assertIn("OrbythGrid", app)
+        self.assertIn("OrbythWidgets", app)
+        # the effects director: situations change the whole plate, and events must reach it
+        self.assertIn("effects.js", html)
+        self.assertIn("OrbythEffects", app)
+        self.assertIn("fx.route", app)
+        self.assertIn("applyEffects", app)
+        self.assertIn("bindPulses", app)
+
+    def test_a_3d_explanation_window_stops_rendering_when_it_closes(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "hud", "app.js"), encoding="utf-8") as handle:
+            app = handle.read()
+        self.assertIn("scene3D", app)
+        self.assertIn("state.sceneFrame = null", app)
+        self.assertIn("closeScene", app)
+
+
 class HudServiceTests(unittest.TestCase):
     def test_snapshot_exposes_the_whole_system(self):
         from orbynth.hud.service import HudService
@@ -225,6 +331,43 @@ class HudServiceTests(unittest.TestCase):
             self.assertIn("quotas", snapshot)
         finally:
             stack.close()
+
+    def test_the_interface_is_told_which_way_the_language_reads(self):
+        """An RTL language is a layout, not a translation (contract 22.11).
+
+        The language layer knew the direction; the HUD never asked, so an Urdu or Arabic user
+        got left-anchored chrome with right-to-left text inside it.
+        """
+        from orbynth.hud.service import HudService
+
+        stack = Stack()
+        try:
+            stack.config.voice.language = "ur"
+            stack.config.voice.secondary_languages = ["en"]
+            service = HudService(
+                config=stack.config,
+                bus=stack.bus,
+                memory=stack.memory,
+                registry=stack.actions,
+                runtime=stack.runtime,
+                quotas=stack.quotas,
+                orchestrator=stack.orchestrator,
+                plugins=stack.plugins,
+            )
+            machine = service.snapshot()["machine"]
+            self.assertEqual(machine["language_dir"], "rtl")
+            self.assertIn("urd", machine["languages"])
+        finally:
+            stack.close()
+
+    def test_the_interface_applies_the_direction_and_styles_a_disputed_report(self):
+        """Static check: the core can report a direction the chrome never uses."""
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        app = open(os.path.join(root, "hud", "app.js"), encoding="utf-8").read()
+        css = open(os.path.join(root, "hud", "styles.css"), encoding="utf-8").read()
+        self.assertIn("applyDirection", app)
+        self.assertIn('document.documentElement.dir', app)
+        self.assertIn("status-disputed", css)
 
     def test_hud_commands_require_a_live_fleet(self):
         from orbynth.hud.service import HudService

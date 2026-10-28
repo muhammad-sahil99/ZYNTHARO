@@ -52,11 +52,18 @@ MAX_REPORT_SUMMARY = 400
 
 @dataclass(slots=True)
 class AgentReport:
-    """The five-line contract between an agent and its parent."""
+    """The five-line contract between an agent and its parent.
+
+    ``status`` is one of ``done``, ``partial``, ``blocked``, ``failed`` or ``disputed``.
+    An agent may claim the first four itself; ``disputed`` is written by the outcome verifier
+    when the finished state does not satisfy the task's own success criteria. It exists in
+    this vocabulary on purpose: without it a verified failure looked like an ordinary claim of
+    success to every consumer (HUD status pill, team board, parent's consolidation prompt).
+    """
 
     task_id: str = ""
     agent: str = ""
-    status: str = "done"  # done | failed | blocked | partial
+    status: str = "done"  # done | failed | blocked | partial | disputed
     summary: str = ""
     evidence: list[str] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)
@@ -65,6 +72,9 @@ class AgentReport:
     actions: int = 0
     tokens: int = 0
     seconds: float = 0.0
+    #: The verifier's verdict on the finished state against the task's success criteria
+    #: (contract 22.4). ``None`` means the task carried no contract, not that it passed.
+    verdict: dict[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -79,6 +89,7 @@ class AgentReport:
             "actions": self.actions,
             "tokens": self.tokens,
             "seconds": round(self.seconds, 1),
+            "verdict": self.verdict,
         }
 
     def one_line(self) -> str:
@@ -207,8 +218,13 @@ class Agent:
         max_steps: int = 24,
         parent_task: str | None = None,
         team_id: str | None = None,
+        contract: Any = None,
+        work_class: str = "interactive",
     ) -> AgentReport:
         started = time.time()
+        self.work_class = work_class
+        if contract is not None and not getattr(contract, "task_id", ""):
+            contract.task_id = "pending"
         team = team_id or self.identity.team_id or "fleet"
         task_id = self.memory.create_task(
             team,
@@ -246,6 +262,19 @@ class Agent:
                 budget.check(time.time())
             except BudgetExceeded as exc:
                 report = AgentReport(task_id, self.name, "failed", f"budget exhausted: {exc}", [], [str(exc)], "", 0.2, action_count, total_tokens, time.time() - started)
+                break
+
+            if contract is not None and contract.task_id == "pending":
+                contract.task_id = task_id
+            deferred = self._honour_governor(deadline_deferrals=self._deferral_budget())
+            if deferred is None:
+                # The machine has been busy for the whole allowed window: report it honestly
+                # instead of burning the budget waiting for a desktop that is not free.
+                report = AgentReport(
+                    task_id, self.name, "blocked", "deferred: the machine is busy (game, call or presentation)",
+                    [], ["responsiveness governor held this task back"], "rerun when the machine is free",
+                    0.3, action_count, total_tokens, time.time() - started,
+                )
                 break
 
             request = LLMRequest(
@@ -357,11 +386,104 @@ class Agent:
                 [], ["step limit reached"], "re-scope the task or raise max_steps",
                 0.3, action_count, total_tokens, time.time() - started,
             )
+        report = self._verify_outcome(contract, report, task_id)
         self.reports.append(report)
         self.memory.update_task(task_id, status=report.status, report=report.to_json())
         self.memory.set_agent_status(self.id, "idle")
         self.bus.emit(AGENT_REPORT, source=self.id, **report.to_json())
         return report
+
+    # -- outcome verification (contract 22.4) ------------------------------------------
+    def _deferral_budget(self) -> float:
+        return float(getattr(getattr(self.config, "ops", None), "governor_max_defer_s", 90) or 90)
+
+    def _honour_governor(self, deadline_deferrals: float) -> float | None:
+        """Yield the machine while a game, call or presentation is running.
+
+        Returns None when the machine has been busy longer than the allowed window, so the
+        caller can report a deferral instead of waiting forever. Interactive work the user
+        asked for is never held back (see ``ops/governor.py``).
+        """
+        governor = getattr(getattr(self, "orchestrator", None), "governor", None)
+        if governor is None:
+            return 0.0
+        state = governor.evaluate()
+        allowed, why = governor.may_run(getattr(self, "work_class", "interactive"), state)
+        if allowed:
+            self._deferred_total = getattr(self, "_deferred_total", 0.0)
+            return 0.0
+        delay = min(governor.delay_for(getattr(self, "work_class", "interactive"), state) or 5.0, 15.0)
+        self._deferred_total = getattr(self, "_deferred_total", 0.0) + delay
+        if self._deferred_total > deadline_deferrals:
+            return None
+        self.bus.emit(
+            AGENT_STATUS,
+            source=self.id,
+            severity="notice",
+            agent=self.name,
+            status="deferred",
+            reason=why,
+            seconds=round(delay, 1),
+        )
+        time.sleep(delay)
+        return delay
+
+    def _verify_outcome(self, contract: Any, report: AgentReport, task_id: str) -> AgentReport:
+        """Check what was asked against what is, rather than trusting the agent's own claim."""
+        verifier = getattr(getattr(self, "orchestrator", None), "verifier", None)
+        if contract is None or verifier is None:
+            return report
+        contract.task_id = task_id
+        # Evidence the task produced becomes checkable criteria: if the agent wrote files or
+        # visited URLs while working, those are things the finished state can be tested against.
+        performed: list[dict[str, Any]] = []
+        try:
+            for row in self.memory.audit_log(limit=400, agent_id=self.id):
+                performed.append(row)
+        except Exception:
+            performed = []
+        self._derive_criteria(contract, performed)
+        observations = {"resolved": {}}
+        verdict = verifier.check(contract, observations, performed=performed, claim=report.summary)
+        report.verdict = verdict.to_json()
+        if verdict.status == "not_met":
+            report.status = "disputed"
+            report.blockers = [*report.blockers, f"outcome check failed: {verdict.summary}"][:5]
+            report.next_step = report.next_step or "fix the unmet criteria before calling this done"
+        elif verdict.status == "needs_user" and verdict.question:
+            report.next_step = report.next_step or verdict.question
+            self.context_note = verdict.question
+        elif verdict.status == "uncertain":
+            # Not a failure, but not a pass either: say what would have to be checkable.
+            report.next_step = report.next_step or (
+                "outcome check was inconclusive (nothing checkable was written for this task); "
+                "state what proves the goal is met"
+            )
+        self.remember(
+            f"Outcome check for {task_id}: {verdict.status} - {verdict.summary}",
+            kind="verification",
+            importance=0.7,
+            tags=["verification", verdict.status],
+        )
+        return report
+
+    @staticmethod
+    def _derive_criteria(contract: Any, performed: list[dict[str, Any]]) -> None:
+        """Turn real side effects into criteria, so 'done' gets tested against reality."""
+        from ..ops.verification import FILE_EXISTS, SuccessCriterion
+
+        known = {c.target for c in contract.criteria}
+        for row in performed:
+            args = row.get("args") or {}
+            if not isinstance(args, dict):
+                continue
+            action = str(row.get("action") or "")
+            outcome = str(row.get("outcome") or "")
+            if action == "fs_write" and outcome == "ok" and args.get("path"):
+                target = str(args["path"])
+                if target not in known:
+                    contract.criteria.append(SuccessCriterion(FILE_EXISTS, target=target, note="file this task wrote"))
+                    known.add(target)
 
     def _conversation(self) -> list[Message]:
         rows = self.memory.transcript(self.id, limit=30)
@@ -391,12 +513,19 @@ class Agent:
             bus=self.bus,
             memory=self.memory,
             config=self.config,
-            identity=self.identity,
-            confirmed=tuple(self.config.safety.confirm_capabilities)
-            if self.identity.rank <= 1
-            else (),
+            # No blanket pre-approval, for any rank. This used to be
+            # ``tuple(config.safety.confirm_capabilities) if rank <= 1 else ()`` -- the same
+            # list that *requires* confirmation also marked it pre-approved, so the gate
+            # cancelled itself and the Sovereign and Steward never showed an approval card
+            # for a single dangerous action. Pre-approval now comes only from a real, explicit
+            # approval (the HUD's confirm path calls ``registry.approve``), which is what the
+            # user actually clicked.
+            confirmed=(),
+            # The owner gate (contract 22.7): irreversible work needs the owner's PIN, however
+            # this action was reached. The registry emits action.invoked itself, so this method
+            # deliberately does not emit a second copy (it used to, doubling HUD effects).
+            require_owner=bool(getattr(getattr(self.config, "ops", None), "require_owner_for_irreversible", False)),
         )
-        self.bus.emit(ACTION_INVOKED, source=self.id, action=name, args={k: str(v)[:80] for k, v in list(kwargs.items())[:6]})
         result = self.actions.invoke(name, ctx, **kwargs)
         if result.ok and self._worth_remembering(name):
             self.memory.remember(
