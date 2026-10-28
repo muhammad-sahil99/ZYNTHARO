@@ -11,7 +11,7 @@ import zipfile
 from unittest import mock
 
 from tests.helpers import Stack
-from orbynth.actions.browser import BrowserController, TabInfo, set_controller
+from orbynth.actions.browser import BrowserController, CDPController, TabInfo, set_controller
 from orbynth.actions.input_control import FocusGuard, RecordingBackend, WindowRef, set_backend, type_verified
 from orbynth.actions.registry import DriverUnavailable
 from orbynth.actions.whatsapp import set_backend as set_whatsapp_backend
@@ -447,6 +447,47 @@ class BrowserActionTests(ActionTestCase):
         )
         self.assertFalse(result.ok)
         self.assertIn("never appeared", result.error)
+
+    def test_release_frees_the_controller_and_reports_it(self):
+        """Quitting used to leave the managed browser and every tab alive."""
+        import orbynth.actions.browser as browser_module
+
+        closed: list[str] = []
+
+        class Closable(FakeBrowser):
+            def release(self):
+                closed.append("released")
+                return {"released": True, "reason": "managed browser closed"}
+
+        browser_module.set_controller(Closable())
+        result = self.stack.tool("browser_release", capabilities=["browser.tabs"])
+        self.assertTrue(result.ok)
+        self.assertTrue(result.output["released"])
+        self.assertEqual(closed, ["released"])
+        self.assertIsNone(browser_module._CONTROLLER, "a released controller must not stay cached")
+
+    def test_release_without_a_browser_is_honest(self):
+        import orbynth.actions.browser as browser_module
+
+        browser_module.set_controller(None)
+        result = self.stack.tool("browser_release", capabilities=["browser.tabs"])
+        self.assertTrue(result.ok)
+        self.assertFalse(result.output["released"])
+        self.assertIn("no browser", result.output["reason"])
+
+    def test_an_attached_user_browser_is_never_closed(self):
+        import orbynth.actions.browser as browser_module
+
+        class Attached(CDPController):
+            def __init__(self):
+                super().__init__("http://127.0.0.1:9222")
+
+        attached = Attached()
+        browser_module.set_controller(attached)
+        result = self.stack.tool("browser_release", capabilities=["browser.tabs"])
+        self.assertTrue(result.ok)
+        self.assertFalse(result.output["released"])
+        self.assertIn("does not own", result.output["reason"])
 
     def test_dialog_action_reports_a_controller_that_cannot_answer(self):
         result = self.stack.tool("browser_dialog", capabilities=["browser.click"], accept=True)

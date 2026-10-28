@@ -59,9 +59,14 @@ class Budget:
     actions_used: int = 0
     tokens_used: int = 0
     started_at: float = 0.0
+    #: Separate from ``started_at`` because 0.0 is a *valid* timestamp (a monotonic clock at
+    #: boot, or any injected test clock). Using it as the "not started" sentinel meant a budget
+    #: started at exactly 0.0 silently never enforced its wall-clock limit.
+    started: bool = False
 
     def start(self, now: float) -> None:
         self.started_at = now
+        self.started = True
 
     def charge_action(self, now: float) -> None:
         self.actions_used += 1
@@ -76,14 +81,14 @@ class Budget:
             raise BudgetExceeded(f"action budget exceeded ({self.actions_used}/{self.max_actions})")
         if self.tokens_used > self.max_tokens:
             raise BudgetExceeded(f"token budget exceeded ({self.tokens_used}/{self.max_tokens})")
-        if self.started_at and now - self.started_at > self.max_wall_seconds:
+        if self.started and now - self.started_at > self.max_wall_seconds:
             raise BudgetExceeded(f"wall-clock budget exceeded ({self.max_wall_seconds:.0f}s)")
 
     def to_json(self, now: float) -> dict[str, Any]:
         return {
             "actions": f"{self.actions_used}/{self.max_actions}",
             "tokens": f"{self.tokens_used}/{self.max_tokens}",
-            "elapsed_s": round(max(0.0, now - self.started_at), 1) if self.started_at else 0.0,
+            "elapsed_s": round(max(0.0, now - self.started_at), 1) if self.started else 0.0,
             "wall_limit_s": self.max_wall_seconds,
         }
 
@@ -149,6 +154,12 @@ class ModelRuntime:
         ordered: list[str] = [q for q in prefer if q in by_name]
         # Unknown/unsupported preferences are dropped, not fatal.
         rest = [s for s in specs if s.qualified not in ordered]
+        # Prune before ranking: an entry from two minutes ago otherwise still counts against the
+        # per-minute limit here, so the fleet avoided a model that was already idle.
+        for spec in rest:
+            quota = self.quotas.models.get(spec.qualified)
+            if quota is not None:
+                quota.prune(self.quotas.clock())
         rest.sort(
             key=lambda s: (
                 self.config.provider(s.provider).priority if self.config.provider(s.provider) else 99,

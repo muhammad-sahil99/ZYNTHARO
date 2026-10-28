@@ -167,11 +167,36 @@ class Agent:
                 f"{budget.max_wall_seconds:.0f}s wall clock.",
                 roster_note,
                 memory_digest,
+                self._lesson_digest(),
                 team_note,
                 f"Finish every task by calling the `{REPORT_TOOL}` tool. Prose is not a completion. "
                 "Summary must be one line. Put detail in memory, not in the report.",
             )
             if part
+        )
+
+    def _lesson_digest(self) -> str:
+        """Known failure patterns for this machine, so an agent does not repeat them.
+
+        Read from the registry's LessonBook (see ``ops/lessons.py``). Empty when there is
+        nothing learned yet: an invented hint would be worse than none.
+        """
+        holder = getattr(self, "registry", None)
+        if holder is None:
+            holder = getattr(self, "actions", None)
+        book = getattr(holder, "lessons", None)
+        if book is None:
+            return ""
+        try:
+            rows = book.top(5)
+        except Exception:  # noqa: BLE001 - the prompt must still build
+            return ""
+        if not rows:
+            return ""
+        lines = [f"- {row['action']} failed {row['hits']}x: {row['cause']} → {row['fix']}" for row in rows]
+        return (
+            "Failure patterns already observed on this machine. Read them before choosing a tool; "
+            "repeating one is your mistake, not the machine's:\n" + "\n".join(lines)
         )
 
     def _memory_digest(self, query: str) -> str:

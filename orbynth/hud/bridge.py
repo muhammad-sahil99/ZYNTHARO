@@ -138,7 +138,12 @@ class HudBridge:
         self.bus = bus
         self.host = host
         self.port = port
-        self.static_dir = Path(static_dir) if static_dir else Path(__file__).resolve().parent.parent.parent / "hud"
+        if static_dir:
+            self.static_dir = Path(static_dir)
+        else:
+            from ..resources import resource_path
+
+            self.static_dir = resource_path("hud")
         self.snapshot_provider = snapshot_provider
         self.command_router = command_router
         self.max_queue = max_queue

@@ -28,7 +28,7 @@ Legend: **T** = unit/integration test, **G** = release-gate operation (`python t
 | 16 | Hardware monitor: collection, plausibility, rules, protection, alerts | `orbynth/ops/sensors.py`, `orbynth/actions/hardware.py` | T `tests/test_sensors.py`, G `hardware_sensors`, M `sensor_rig`, `sensor_accuracy` |
 | 17 | HUD: particle core, wiring, panels, scenes, effects | `hud/*.js`, `hud/index.html`, `hud/styles.css`, `orbynth/hud/service.py` | T `tests/test_hud.py`, `node tools/hud_visual_check.js`, G `hud_coverage` |
 | 18 | Mobile handover and remote control | — | **not built** → LIMITATIONS |
-| 19 | Packaging, installer, updates, docs | `pyproject.toml`, `orbynth/ops/catalog.py`, this file set | T `tests/test_ops.py`, G `catalog_rollback`; installer **not built** |
+| 19 | Packaging, installer, updates, docs | `tools/build_windows_bundle.py`, `tools/build_windows_installer.py`, `installer/ORBYNTH.iss`, `orbynth/resources.py`, `pyproject.toml`, `orbynth/ops/catalog.py` | T `tests/test_packaging.py`, G bundle/installer-input checks; signing and clean-VM acceptance pending |
 | 20 | Cloud sync of selected items | — | **not built** → LIMITATIONS |
 | 21 | Security: secrets, ownership, no bypass | `orbynth/ops/owner.py`, `orbynth/ops/risk.py`, `orbynth/config.py` (`Secrets`) | T `tests/test_ops.py`, G `owner_gate`, `risk_tiers` |
 | 22.1 | Supervised processes, cleanup, reconciliation | `orbynth/ops/supervisor.py`, `orbynth/ops/spawn.py` | G `supervisor_cleanup`, T `test_ops.py` |
@@ -42,10 +42,21 @@ Legend: **T** = unit/integration test, **G** = release-gate operation (`python t
 | 22.9 | Test lab, flaky policy, dedicated accounts | `tools/acceptance.json`, this file | manual — see OWNER_REQUIREMENTS |
 | 22.10 | Safe updates, retired models, signed catalogue | `orbynth/ops/catalog.py`, `orbynth/ops/update.py` | T `test_ops.py`, G `catalog_rollback` |
 | 22.11 | Other languages, RTL, PC responsiveness, low priority | `orbynth/ops/languages.py`, `orbynth/ops/governor.py` | T `test_ops.py`, G `language_rtl`, `governor` |
+| resource admission | Parallel work is capped before it starts and the cap shrinks with load; teams run in bounded batches; the managed browser is released on shutdown and on request; an idle or hidden HUD does not render at full rate | `orbynth/ops/governor.py` (`worker_limit`), `orbynth/agents/orchestrator.py` (`_worker_batch_size`), `orbynth/actions/browser.py` (`release`), `hud/app.js` (power policy), `orbynth/cli.py` (`Stack.shutdown`) | T `test_ops.py`, `test_agents_plugins.py`, `test_actions.py`, `test_hud.py` |
 
 | fleet comms | Agents ask each other for help, answer, hand over files; every message stored in a thread, open requests stay visible | `orbynth/agents/comms.py`, `orbynth/actions/fleet.py` | T `test_comms.py` |
 | reserve models | A model is added with its rpm/rpd/rpw and tpm/tpd/tpw envelope, optionally as a reserve; activation is the manager's authority | `orbynth/llm/reserve.py`, `orbynth/actions/fleet.py` | T `test_reserve.py` |
 | control manager | The Steward holds `model.manage` and `agent.messaging`; reserves are quota-tracked from the first call and assigned to nobody until activated | `orbynth/agents/roles.py`, `orbynth/config.py` | T `test_reserve.py` |
+
+| presence: speakers | How many people are talking, which segments belong to whom, male/female/unknown per voice, voice enrolment and identification | `orbynth/voice/speakers.py`, `orbynth/actions/presence.py` | T `test_speakers.py`, `test_presence.py` (actions) |
+| presence: camera | Consent-gated capture, face detection and enrolment, refusal on OS denial, no frame retention | `orbynth/vision/camera.py`, `orbynth/actions/presence.py` | T `test_camera.py`, `test_presence.py` |
+| presence: etiquette | Speak / shorten / screen-only / wait / silent, with the reason; private content is never read aloud in front of a stranger | `orbynth/ops/presence.py`, `orbynth/actions/presence.py` | T `test_presence.py` |
+| presence: identity is not authority | A recognised voice or face never grants a capability; the owner gate still decides | `orbynth/ops/owner.py`, `orbynth/ops/risk.py` | T `test_ops.py`, `test_presence.py` |
+| mistake memory | A repeated failure carries its known fix; agents read the patterns before choosing a tool; nothing is auto-executed from a lesson | `orbynth/ops/lessons.py`, `orbynth/actions/registry.py`, `orbynth/agents/base.py` | T `test_lessons.py`, `test_agents_plugins.py` |
+| core arithmetic | Quota cooldowns and spend survive a restart; warnings fire once per window-minute; headroom prunes expired windows; budgets enforce a wall clock started at 0.0; kind-filtered memory search binds the right parameters on both retrieval paths | `orbynth/llm/quotas.py`, `orbynth/llm/runtime.py`, `orbynth/memory.py` | T `test_core_audit.py`, `test_llm.py`, `test_core.py` |
+| role reachability | Every declared capability is granted to some delegable role, or listed in `OWNER_ONLY_CAPABILITIES` with a reason; identity enrolment is never granted to an agent | `orbynth/agents/roles.py`, `orbynth/config.py` | T `test_roles_audit.py` |
+| logic audit | Camera threshold vs model boundary, recognition-capability vs recognition-hit, single unverified voice, OS denial recorded, interrupted scheduled run | `orbynth/vision/camera.py`, `orbynth/ops/presence.py`, `orbynth/ops/schedule.py` | T `test_logic_audit.py` |
+| scheduled work | One-shot and recurring queues, a grace window that skips stale runs, GUI work deferred on a locked session, bounded ticks, restart persistence | `orbynth/ops/schedule.py`, `orbynth/actions/schedule.py` | T `test_schedule.py` |
 
 ## How to keep this honest
 

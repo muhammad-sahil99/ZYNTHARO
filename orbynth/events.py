@@ -102,6 +102,28 @@ VOICE_WAKE = "voice.wake"
 #: Spoken/heard language differs from the configured one (multi-language interface, 22.11).
 VOICE_LANGUAGE = "voice.language"
 
+#: Who is speaking (speaker diarization) and whether people are talking over each other.
+VOICE_SPEAKER = "voice.speaker"
+VOICE_OVERLAP = "voice.overlap"
+SPEAKER_ENROLLED = "speaker.enrolled"
+
+#: Camera presence: consent state, a look, and a face enrolment/forget event.
+CAMERA_STATE = "camera.state"
+CAMERA_LOOK = "camera.look"
+CAMERA_FACE = "camera.face"
+
+#: The etiquette layer's verdict on whether (and how) to speak.
+PRESENCE_DECISION = "presence.decision"
+
+#: A failure pattern was learned (and the fix that should be tried next time).
+LESSON_RECORDED = "lesson.recorded"
+
+#: Scheduled work: added, due now, skipped with a reason, or finished with an outcome.
+TASK_SCHEDULED = "task.scheduled"
+TASK_DUE = "task.due"
+TASK_SKIPPED = "task.skipped"
+TASK_SCHEDULE_RESULT = "task.schedule_result"
+
 #: Hardware monitor (spec 16): a deterministic service, not an agent.
 HARDWARE_ALERT = "hardware.alert"
 HARDWARE_CLEARED = "hardware.cleared"

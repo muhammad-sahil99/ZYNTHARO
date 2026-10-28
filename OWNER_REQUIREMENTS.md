@@ -34,11 +34,12 @@ the HUD instead of pretending.
 
 ## Environment and setup
 
-* **Python 3.11+** and the optional extras you actually need:
+* **For source/developer runs only:** Python 3.11+ and the optional extras you actually need:
   `pip install -e ".[desktop,voice,vision,hud]"` (add `windows` on Windows for UIA/Office COM).
-  On a machine with no coding environment, the packaged installer is required — see
-  [BUILD_STATUS.md](BUILD_STATUS.md): it is not built yet.
-* **Playwright Chromium** for browser control: `playwright install chromium`.
+  End users must not perform this setup: the Windows payload builder is now in
+  `tools/build_windows_bundle.py`, but the signed installer and clean-machine acceptance are not
+  built yet — see [BUILD_STATUS.md](BUILD_STATUS.md).
+* **For source/developer runs only:** Playwright Chromium for browser control: `playwright install chromium`.
 * **OCR engine** (`rapidocr-onnxruntime`) for reading text off images; **`pypdf`** for PDF text.
 * **A virtual audio device** plus the WhatsApp sidecar for real-time voice calls.
 * **Provider quotas**: fill in each model's rpm/rpd/tpm so the Steward can manage failover

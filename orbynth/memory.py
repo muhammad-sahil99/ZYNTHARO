@@ -502,7 +502,11 @@ class MemoryStore:
             params.extend(kinds)
 
         if query.strip():
-            if self.has_fts:
+            fts_query = self._fts_query(query)
+            # No usable terms (a query of stopwords, or of words shorter than the tokeniser's
+            # minimum) must fall back — the old code sent a bare quote to MATCH, which threw on
+            # every such search and turned a harmless query into an exception path.
+            if self.has_fts and fts_query:
                 sql = (
                     "SELECT e.* FROM episodes e JOIN episodes_fts f ON f.rowid = e.id "
                     f"WHERE e.agent_id IN ({placeholders})"
@@ -512,13 +516,13 @@ class MemoryStore:
                     sql += f" AND e.kind IN ({','.join('?' for _ in kinds)})"
                     fts_params.extend(kinds)
                 sql += " AND episodes_fts MATCH ? ORDER BY bm25(episodes_fts) LIMIT 200"
-                fts_params.append(self._fts_query(query))
+                fts_params.append(fts_query)
                 try:
                     rows = self._conn.execute(sql, fts_params).fetchall()
                 except sqlite3.OperationalError:
-                    rows = self._fallback_query(query, params)
+                    rows = self._fallback_query(query, scopes, kinds)
             else:
-                rows = self._fallback_query(query, params)
+                rows = self._fallback_query(query, scopes, kinds)
         else:
             sql += " ORDER BY ts DESC LIMIT 200"
             rows = self._conn.execute(sql, params).fetchall()
@@ -551,19 +555,37 @@ class MemoryStore:
         hits.sort(key=lambda h: h.score, reverse=True)
         return hits[:k]
 
-    def _fallback_query(self, query: str, params: list[Any]) -> list[sqlite3.Row]:
-        clauses = " OR ".join("text LIKE ?" for _ in _tokens(query)) or "text LIKE ?"
-        like_args = [f"%{tok}%" for tok in (_tokens(query) or [query])]
+    def _fallback_query(
+        self,
+        query: str,
+        scopes: Sequence[str],
+        kinds: Sequence[str] | None = None,
+    ) -> list[sqlite3.Row]:
+        """LIKE search across the given scopes, with the kind filter actually applied.
+
+        The old version derived the placeholder count from the *combined* parameter list, so a
+        search with a ``kinds`` filter built ``agent_id IN (?,?,?)`` and then bound two agent
+        ids and the kind names into it: no error, correct row count, silently wrong rows. The
+        scope list and the filter list are now passed separately and bound in order.
+        """
+        tokens = _tokens(query) or [query.strip() or "*"]
+        clauses = " OR ".join("text LIKE ?" for _ in tokens)
+        like_args = [f"%{token}%" for token in tokens]
         sql = (
             "SELECT * FROM episodes WHERE agent_id IN "
-            f"({','.join('?' for _ in params)}) AND ({clauses}) ORDER BY ts DESC LIMIT 200"
+            f"({','.join('?' for _ in scopes)}) AND ({clauses})"
         )
-        return self._conn.execute(sql, params + like_args).fetchall()
+        args: list[Any] = [*scopes, *like_args]
+        if kinds:
+            sql += f" AND kind IN ({','.join('?' for _ in kinds)})"
+            args.extend(kinds)
+        sql += " ORDER BY ts DESC LIMIT 200"
+        return self._conn.execute(sql, args).fetchall()
 
     @staticmethod
     def _fts_query(query: str) -> str:
         toks = _tokens(query)
-        return " OR ".join(f'"{t}"' for t in toks) if toks else '"' 
+        return " OR ".join(f'"{t}"' for t in toks) if toks else ""
 
     def forget(self, agent_id: str, episode_id: int) -> bool:
         cur = self._conn.execute("DELETE FROM episodes WHERE agent_id=? AND id=?", (agent_id, episode_id))

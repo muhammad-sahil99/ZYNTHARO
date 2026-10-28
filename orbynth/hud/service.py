@@ -46,6 +46,11 @@ class HudService:
         index: Any = None,
         comms: Any = None,
         reserves: Any = None,
+        speakers: Any = None,
+        camera: Any = None,
+        presence: Any = None,
+        lessons: Any = None,
+        scheduler: Any = None,
     ):
         self.config = config
         self.bus = bus
@@ -68,13 +73,26 @@ class HudService:
         #: Inter-agent comms and the model bench (reserve models with declared limits).
         self.comms = comms
         self.reserves = reserves
+        #: Who is talking and who is in the room: presence is shown as evidence, including the
+        #: camera's consent state, because a blocked camera must look blocked, not empty.
+        self.speakers = speakers
+        self.camera = camera
+        self.presence = presence
+        #: What the system has learned from its own failures, and the work queued for later.
+        self.lessons = lessons
+        self.scheduler = scheduler
         #: Recent outcome checks and preflight decisions, newest first.
         self.verdicts: list[dict[str, Any]] = []
         self.preflight_log: list[dict[str, Any]] = []
         self.bus.subscribe("task.verified", self._on_verdict)
         self.bus.subscribe("task.disputed", self._on_verdict)
         self.bus.subscribe("task.preflight", self._on_preflight)
-        self.static_dir = Path(static_dir) if static_dir else Path(__file__).resolve().parent.parent.parent / "hud"
+        if static_dir:
+            self.static_dir = Path(static_dir)
+        else:
+            from ..resources import resource_path
+
+            self.static_dir = resource_path("hud")
         self.bridge = HudBridge(
             bus=bus,
             host=config.hud.host,
@@ -145,7 +163,27 @@ class HudService:
             "search": self._search_snapshot(),
             "comms": self._comms_snapshot(),
             "reserves": self._reserves_snapshot(),
+            "presence": self._presence_snapshot(),
+            "lessons": self.lessons.stats() | {"top": self.lessons.top(6)} if self.lessons is not None else {"lessons": 0, "note": "lesson book not attached"},
+            "schedule": self.scheduler.snapshot() if self.scheduler is not None else {"count": 0, "note": "scheduler not attached"},
         }
+
+    def _presence_snapshot(self) -> dict[str, Any]:
+        """Who is present, what each sense actually knows, and the last etiquette verdict."""
+        camera = self.camera
+        payload: dict[str, Any] = {
+            "camera": camera.snapshot() if camera is not None else {"note": "camera not attached"},
+            "people": self.speakers.rows() if self.speakers is not None else [],
+            "owner_voice": self.speakers.owner() if self.speakers is not None else "",
+        }
+        if self.presence is not None:
+            try:
+                payload["snapshot"] = self.presence.snapshot_json()
+            except Exception as exc:  # the panel shows the failure instead of an empty room
+                payload["error"] = repr(exc)
+        else:
+            payload["note"] = "presence controller not attached"
+        return payload
 
     def _comms_snapshot(self) -> dict[str, Any]:
         if self.comms is None:
@@ -214,6 +252,10 @@ class HudService:
             # Give the interface the reason the machine is being left alone, so "deferred"
             # finally has a cause to show instead of an unexplained pause.
             snapshot["busy_reason"] = snapshot.get("busy_reason") or self.governor.busy_reason()
+            # The admission cap is a number the user can act on: it is the real limit on how
+            # much work starts at once, not an estimate of CPU percent.
+            snapshot["worker_cap"] = self.governor.evaluate().worker_cap
+            snapshot["worker_ceiling"] = self.governor.max_workers
         languages = [self.config.voice.language, *self.config.voice.secondary_languages]
         snapshot["languages"] = ", ".join(languages) + " (ocr: " + ocr_languages(languages) + ")"
         # Direction of the interface itself (contract 22.11). A right-to-left language is not
@@ -281,6 +323,8 @@ class HudService:
             "task.submit": self._task,
             "voice.mute": self._voice_mute,
             "voice.ptt": self._voice_ptt,
+            "presence": self._presence_command,
+            "schedule.run": self._schedule_run,
             "speak": self._speak,
             "confirm": self._confirm,
             "plugin.list": lambda _m: self.plugins.installed() if self.plugins else [],
@@ -329,7 +373,16 @@ class HudService:
                 report = sovereign.run_task("user request", text, context="Direct request from the user through the HUD.")
                 self.transcript.append({"role": "assistant", "text": report.summary, "ts": time.time(), "report": report.to_json()})
                 self.bus.emit(VOICE_TRANSCRIPT, source=sovereign.id, text=report.summary, role="assistant")
-                self.bridge.notify(report.summary, severity="info" if report.status == "done" else "warning", speak=True)
+                severity = "info" if report.status == "done" else "warning"
+                decision = self._speech_decision(report.summary, severity)
+                self.bridge.notify(report.summary, severity=severity, speak=bool(decision.get("audible", True)) if decision else True)
+                if decision and not decision.get("audible", True):
+                    self.bus.emit(
+                        HUD_NOTICE,
+                        source="presence",
+                        text=f"reply kept on screen ({decision.get('mode', '')}): {decision.get('reason', '')}",
+                        speak=False,
+                    )
                 if report.blockers:
                     self.bridge.notify("blocked: " + "; ".join(report.blockers[:2]), severity="warning", speak=False)
             except Exception as exc:  # noqa: BLE001
@@ -405,17 +458,74 @@ class HudService:
             self.voice.set_muted(muted)
         return {"muted": muted}
 
+    def _schedule_run(self, message: dict[str, Any]) -> dict[str, Any]:
+        if self.scheduler is None:
+            raise ValueError("no scheduler is attached to this build")
+        summary = self.scheduler.tick()
+        self.bridge.push_state()
+        return summary
+
+    def _presence_command(self, message: dict[str, Any]) -> dict[str, Any]:
+        """The interface's presence controls: one look, or the owner's camera decision.
+
+        Consent can be given here because the interface is the owner's own screen. Agents still
+        cannot do it without ``camera.enroll``: a model must never be able to switch a camera on.
+        """
+        action = str(message.get("action", "look"))
+        if self.camera is None or self.presence is None:
+            raise ValueError("presence is not attached to this build")
+        if action == "consent":
+            decision = str(message.get("decision", "grant"))
+            if decision == "grant":
+                return self.camera.grant(decided_by="owner", note="granted from the interface")
+            if decision == "revoke":
+                return self.camera.revoke("revoked from the interface")
+            return self.camera.deny("declined from the interface")
+        view = self.presence.look()
+        self.bridge.push_state()
+        return {
+            "camera": view.to_json(),
+            "people": self.speakers.rows() if self.speakers is not None else [],
+        }
+
     def _voice_ptt(self, message: dict[str, Any]) -> dict[str, Any]:
         if self.voice is None:
             raise ValueError("voice subsystem is not attached")
         return self.voice.push_to_talk(bool(message.get("down", True)))
 
+    def _speech_decision(self, text: str, severity: str = "info") -> dict[str, Any]:
+        """Ask the etiquette layer whether this may be said out loud.
+
+        Without a presence controller the answer is "nothing to weigh" and the caller speaks,
+        which is the old behaviour. With one attached, the *spoken* path is the one that has to
+        pass the check — the chat panel already shows the text, so a held-back reply is never
+        lost, only made quiet.
+        """
+        if self.presence is None:
+            return {}
+        from ..ops.presence import looks_private
+
+        enabled = bool(getattr(getattr(self.voice, "state", None), "enabled", True))
+        urgency = {"error": "danger", "critical": "critical"}.get(severity, "normal")
+        try:
+            decision = self.presence.decide(text=text, addressed=True, urgency=urgency, voice_enabled=enabled)
+        except Exception as exc:  # noqa: BLE001 - report, then take the private-content-safe side
+            self.bus.emit(LOG, source="presence", severity="warning", message=f"etiquette check failed: {exc}")
+            return {"mode": "text_only", "audible": False, "reason": f"etiquette check failed: {exc}"} if looks_private(text) else {}
+        return decision.to_json()
+
     def _speak(self, message: dict[str, Any]) -> dict[str, Any]:
         text = str(message.get("text", "")).strip()
+        decision = self._speech_decision(text)
+        if decision and not decision.get("audible", True):
+            reason = decision.get("reason", "")
+            self.bridge.notify(f"held back ({decision.get('mode', 'silent')}): {reason}", severity="notice", speak=False)
+            self.bus.emit(VOICE_SPEAKING, source="hud", text=text, muted=True, reason=reason)
+            return {"spoken": "", "held": reason, "mode": decision.get("mode", "silent")}
         if self.voice is not None:
             self.voice.say(text)
         self.bus.emit(VOICE_SPEAKING, source="hud", text=text)
-        return {"spoken": text[:200]}
+        return {"spoken": text[:200], "mode": decision.get("mode", "") if decision else "unchecked"}
 
     def _confirm(self, message: dict[str, Any]) -> dict[str, Any]:
         action = str(message.get("action", ""))

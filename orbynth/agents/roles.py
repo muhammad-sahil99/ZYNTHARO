@@ -85,6 +85,11 @@ STEWARD = RoleTemplate(
         "agent.messaging",
         "memory.admin",
         "filesystem.read",
+        # The Steward watches the fleet and the clock: it needs to see who is in the room and to
+        # queue recovery work, and to stop a wedged helper it owns.
+        "presence.read",
+        "task.schedule",
+        "process.kill",
     ),
     insignia="◈",
     color="#ffd166",
@@ -114,6 +119,13 @@ FOREMAN = RoleTemplate(
         "browser.*",
         "shell.exec",
         "network.http",
+        # A Foreman runs long objectives overnight and talks to whoever is in the room: it
+        # needs the schedule and the etiquette check, or those tools are reachable only by the
+        # Sovereign and delegated work silently loses them.
+        "presence.read",
+        "presence.decide",
+        "voice.identify",
+        "task.schedule",
     ),
     insignia="▲",
     color="#9d7bff",
@@ -146,6 +158,10 @@ OPERATIVE = RoleTemplate(
         "browser.tabs",
         "office.word",
         "office.excel",
+        # File work includes the archives it hands back; without these an Operative cannot
+        # finish "zip the folder" without escalating to the Sovereign.
+        "archive.zip",
+        "archive.unzip",
     ),
     insignia="●",
     color="#4ade80",
@@ -204,7 +220,7 @@ WARDEN = RoleTemplate(
     role="warden",
     title="Warden — policy gate",
     rank=RANKS["specialist"],
-    capabilities=("filesystem.read", "process.list", "hardware.read", "hardware.tune"),
+    capabilities=("filesystem.read", "process.list", "hardware.read", "hardware.tune", "presence.read", "camera.view"),
     insignia="⛨",
     color="#f43f5e",
     system_prompt=COMMON_LAW
@@ -322,6 +338,19 @@ TEMPLATES: dict[str, RoleTemplate] = {
         SCRIVENER,
         PROBE,
     )
+}
+
+
+#: Capabilities no standing role holds, with the reason. Everything else in
+#: :data:`orbynth.config.CAPABILITIES` is reachable by at least one non-Sovereign role — asserted
+#: in ``tests/test_roles_audit.py``. Without that check, a new tool added inside an existing
+#: wildcard family can quietly become Sovereign-only, and delegated work loses it forever.
+OWNER_ONLY_CAPABILITIES: dict[str, str] = {
+    "screen.control": "unrestricted whole-screen control is the owner's decision; agents get targeted input, vision and windows",
+    "office.macro": "a macro executes arbitrary code inside a document, so it is never an agent's step",
+    "plugin.uninstall": "removing capability changes the product itself and is the owner's call",
+    "voice.enroll": "voice enrolment is biometric: the owner does it, nobody does it to them",
+    "camera.enroll": "camera consent and face enrolment are the owner's own acts, taken in the interface or with the PIN",
 }
 
 

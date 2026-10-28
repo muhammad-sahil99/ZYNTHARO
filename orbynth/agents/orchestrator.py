@@ -363,6 +363,28 @@ class Orchestrator:
         self.bus.emit(TASK_CREATED, source=foreman.id, team_id=team_id, objective=objective[:300], items=len(items))
         return team
 
+    def _worker_batch_size(self, remaining: int, parallel: bool) -> int:
+        """How many workers may be *admitted* right now, before any of them start.
+
+        Submitting every future at once is the resource bug this replaces: a nine-item team
+        queued nine agents, each holding a transcript and a model context, and the governor's
+        "pause background work" decision arrived when the memory was already allocated.
+        The cap is recomputed between batches, so pressure that appears mid-run shrinks the
+        next batch instead of being discovered afterwards.
+        """
+        if not parallel:
+            return 1
+        requested = max(1, min(self.max_parallel, remaining))
+        if self.governor is None:
+            return requested
+        from ..ops.governor import BACKGROUND
+
+        try:
+            state = self.governor.evaluate()
+            return max(1, min(requested, self.governor.worker_limit(self.max_parallel, state, BACKGROUND)))
+        except Exception:  # a governor that cannot answer must not stop real work
+            return requested
+
     def run_team(
         self,
         objective: str,
@@ -370,27 +392,36 @@ class Orchestrator:
         parent: Agent | None = None,
         parallel: bool = True,
     ) -> dict[str, Any]:
-        """Run a long objective as a team: workers in parallel, then one consolidated report."""
+        """Run a long objective as a team: bounded parallel batches, then one report."""
         team = self.create_team(objective, items, parent=parent)
         foreman = self.agents[team.foreman_id]
         foreman.remember(f"Leading team {team.team_id} for: {objective}", kind="task", importance=0.8, tags=["team", "lead"])
 
         reports: list[AgentReport] = []
         started = time.time()
-        futures: dict[Future[AgentReport], WorkItem] = {}
-        for item in items:
+        pending = list(items)
+        batches: list[int] = []
+        for item in pending:
             # A long objective is background work: it yields to the user's machine (22.11).
             if item.work_class == "interactive":
                 item.work_class = "background"
-            future = self.dispatch(item, parent=foreman, team_id=team.team_id, wait=False)
-            assert isinstance(future, Future)
-            futures[future] = item
-        for future in as_completed(futures) if parallel and futures else futures:
-            item = futures[future]
-            try:
-                reports.append(future.result())
-            except Exception as exc:  # a crashed worker must not kill the team
-                reports.append(AgentReport("", item.name or item.title, "failed", f"worker crashed: {exc}", [], [str(exc)[:200]]))
+        while pending:
+            size = self._worker_batch_size(len(pending), parallel)
+            batch, pending = pending[:size], pending[size:]
+            batches.append(len(batch))
+            futures: dict[Future[AgentReport], WorkItem] = {}
+            for item in batch:
+                future = self.dispatch(item, parent=foreman, team_id=team.team_id, wait=False)
+                assert isinstance(future, Future)
+                futures[future] = item
+            for future in as_completed(futures) if len(futures) > 1 else futures:
+                item = futures[future]
+                try:
+                    reports.append(future.result())
+                except Exception as exc:  # a crashed worker must not kill the team
+                    reports.append(
+                        AgentReport("", item.name or item.title, "failed", f"worker crashed: {exc}", [], [str(exc)[:200]])
+                    )
 
         # Consolidation is the Foreman's own model call: it summarizes, judges, and decides.
         consolidated = self._consolidate(foreman, objective, reports)
@@ -408,6 +439,7 @@ class Orchestrator:
             "summary": consolidated,
             "elapsed_s": round(time.time() - started, 1),
             "parallel": parallel,
+            "batches": batches,
         }
 
     def _consolidate(self, foreman: Agent, objective: str, reports: Sequence[AgentReport]) -> str:

@@ -919,6 +919,9 @@ class SensorMonitor:
     _stop: Any = None
     cpu_seconds: float = 0.0
     started_at: float = 0.0
+    #: Set by :meth:`start`. Kept apart from ``started_at`` so a clock that legitimately reads
+    #: 0.0 is not confused with "never started", and so uptime before start is honestly zero.
+    started: bool = False
 
     def __post_init__(self) -> None:
         # Each monitor owns its rules. They are mutable (tuning changes thresholds), and the
@@ -1084,6 +1087,7 @@ class SensorMonitor:
             return False
         self._stop = threading.Event()
         self.started_at = time.time()
+        self.started = True
 
         def loop() -> None:
             while not self._stop.is_set():
@@ -1208,7 +1212,9 @@ class SensorMonitor:
         instead of a number that would look like a 70% CPU monitor on a machine doing
         nothing. A measurement that is too short to trust is not a passing measurement.
         """
-        elapsed = max(0.0, time.time() - self.started_at) if self.started_at else 0.0
+        # ``started_at`` of 0.0 is a valid timestamp (an injected clock), not "not started":
+        # treating it as a sentinel reported 0s uptime for a monitor that had been running.
+        elapsed = max(0.0, time.time() - self.started_at) if self.started else 0.0
         share = (self.cpu_seconds / elapsed) if elapsed > 0 else 0.0
         warming = elapsed < 5.0
         return {

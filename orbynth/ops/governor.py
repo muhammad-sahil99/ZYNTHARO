@@ -62,6 +62,9 @@ class GovernorState:
     signals: list[BusySignal] = field(default_factory=list)
     load_per_cpu: float = 0.0
     priority: str = PRIORITY_BELOW
+    # The cap is applied before workers are submitted. Pausing later is too late: Chromium,
+    # OCR or a local model can already have allocated memory by then.
+    worker_cap: int = 1
     reason: str = ""
 
     @property
@@ -74,6 +77,7 @@ class GovernorState:
             "signals": [asdict(s) for s in self.signals],
             "load_per_cpu": round(self.load_per_cpu, 3),
             "priority": self.priority,
+            "worker_cap": self.worker_cap,
             "reason": self.reason,
         }
 
@@ -166,6 +170,7 @@ class ResponsivenessGovernor:
         detector: Callable[[], list[BusySignal]] | None = None,
         load_ceiling: float = 0.85,
         load_provider: Callable[[], float] | None = None,
+        max_workers: int = 2,
     ):
         self.bus = bus or EventBus()
         self.detector = detector or detect_busy
@@ -173,6 +178,7 @@ class ResponsivenessGovernor:
         #: never by how busy the machine running the tests happens to be.
         self.load_provider = load_provider or machine_load
         self.load_ceiling = load_ceiling
+        self.max_workers = max(1, int(max_workers))
         self._paused = False
         self._priority = PRIORITY_NORMAL
 
@@ -198,7 +204,17 @@ class ResponsivenessGovernor:
             BACKGROUND: bool(kinds & {GAME, VIDEO_CALL, PRESENTATION, FULLSCREEN}) or load > self.load_ceiling,
             MAINTENANCE: bool(kinds) or load > self.load_ceiling * 0.75,
         }
-        state = GovernorState(paused=paused, signals=signals, load_per_cpu=load, priority=self._priority)
+        # Keep one worker alive under mild pressure; zero is reserved for explicit courtesy
+        # pauses. Interactive requests are separately exempt in ``may_run``.
+        if paused[BACKGROUND]:
+            worker_cap = 1
+        elif load > self.load_ceiling * 0.6:
+            worker_cap = max(1, self.max_workers // 2)
+        else:
+            worker_cap = self.max_workers
+        state = GovernorState(
+            paused=paused, signals=signals, load_per_cpu=load, priority=self._priority, worker_cap=worker_cap
+        )
         if paused[BACKGROUND]:
             state.reason = "busy: " + ", ".join(sorted(kinds | ({HEAVY_LOAD} if load > self.load_ceiling else set())))
         if paused[BACKGROUND] != self._paused:
@@ -222,6 +238,18 @@ class ResponsivenessGovernor:
         if work_class == MAINTENANCE and state.paused.get(MAINTENANCE):
             return False, f"maintenance deferred: {state.reason or 'machine busy'}"
         return True, ""
+
+    def worker_limit(self, requested: int, state: GovernorState, work_class: str = BACKGROUND) -> int:
+        """Bound admissions before expensive helpers can be started.
+
+        This is deliberately a *limit*, not a measurement of CPU percent. Python cannot safely
+        promise a percentage for child browsers or native models; limiting parallel starts is
+        the reliable cross-platform control the supervisor and orchestrator can enforce.
+        """
+        requested = max(1, int(requested))
+        if work_class in {CRITICAL, INTERACTIVE}:
+            return min(requested, self.max_workers)
+        return min(requested, state.worker_cap)
 
     def delay_for(self, work_class: str, state: GovernorState) -> float:
         """How long to wait before the next unit of this class of work."""
@@ -260,4 +288,10 @@ class ResponsivenessGovernor:
 
     def summary(self) -> dict[str, Any]:
         state = self.evaluate()
-        return {"state": state.to_json(), "priority": self._priority, "platform": sys.platform, "paused": self._paused}
+        return {
+            "state": state.to_json(),
+            "priority": self._priority,
+            "configured_worker_cap": self.max_workers,
+            "platform": sys.platform,
+            "paused": self._paused,
+        }

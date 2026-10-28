@@ -182,6 +182,39 @@ class OrchestrationTests(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(self.workdir, f"f{index}.txt")))
         self.assertEqual(len(self.stack.orchestrator.teams), 1)
 
+    def test_a_large_team_is_admitted_in_bounded_batches(self):
+        """A nine-item team used to queue nine agents at once, each with a live context.
+
+        The governor's cap has to apply *before* submission, otherwise a busy laptop allocates
+        the memory first and learns about the pressure afterwards.
+        """
+        from orbynth.agents.orchestrator import WorkItem
+        from orbynth.ops.governor import ResponsivenessGovernor
+
+        self.stack.orchestrator.governor = ResponsivenessGovernor(
+            detector=lambda: [], load_provider=lambda: 0.7, max_workers=2
+        )
+        items = [
+            WorkItem(
+                title=f"bounded {index}",
+                objective=f'use: fs_write {{"path": "{os.path.join(self.workdir, f"b{index}.txt")}", "content": "x"}}',
+                capabilities=["filesystem.write"],
+            )
+            for index in range(3)
+        ]
+        result = self.stack.orchestrator.run_team("bounded work", items)
+        self.assertGreater(len(result["batches"]), 1, result["batches"])
+        self.assertTrue(all(size <= 1 for size in result["batches"]), result["batches"])
+        self.assertEqual(len(result["reports"]), 3)
+        self.assertTrue(all(report["status"] == "done" for report in result["reports"]))
+
+    def test_an_ungoverned_team_still_uses_the_configured_width(self):
+        from orbynth.agents.orchestrator import WorkItem
+
+        items = [WorkItem(title=f"wide {index}", objective="report done") for index in range(3)]
+        result = self.stack.orchestrator.run_team("wide work", items)
+        self.assertEqual(result["batches"], [3], result["batches"])
+
     def test_worker_crash_does_not_break_the_team(self):
         from orbynth.agents.orchestrator import WorkItem
 

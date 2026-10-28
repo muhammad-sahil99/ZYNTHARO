@@ -118,6 +118,30 @@ GROUP_PROFILES: dict[str, dict[str, Any]] = {
         "needs": "a signed-in WhatsApp Web session in the driven browser",
         "limits": "Calls and voice notes need the audio stack; the QR pairing is done by the owner once.",
     },
+    "voice": {
+        "platforms": ("windows", "macos", "linux"),
+        "driver": "",
+        "needs": "a 16-bit PCM WAV recording (analysis is stdlib-only)",
+        "limits": "Genders are pitch heuristics and can report unknown; overlapping speech is flagged, not separated.",
+    },
+    "camera": {
+        "platforms": ("windows", "macos", "linux"),
+        "driver": "cv2",
+        "needs": "opencv-python for detection, face_recognition (dlib) for identity matching",
+        "limits": "Capture needs the owner's stored consent AND the OS permission; there is no override, and frames are never written to disk.",
+    },
+    "schedule": {
+        "platforms": ("windows", "macos", "linux"),
+        "driver": "",
+        "needs": "nothing; the scheduler is a deterministic service",
+        "limits": "A run missed past its grace window is skipped with a reason, and GUI work is deferred while the session is locked.",
+    },
+    "presence": {
+        "platforms": ("windows", "macos", "linux"),
+        "driver": "",
+        "needs": "nothing beyond the voice and camera senses it fuses",
+        "limits": "Camera evidence is absent without consent, so the decision falls back to voice-only and says so.",
+    },
     "orchestration": {
         "platforms": ("windows", "macos", "linux"),
         "driver": "",

@@ -61,6 +61,31 @@ class FrameCodecTests(unittest.TestCase):
         self.assertEqual(encoded[1], 126)
 
 
+class AnimationPowerTests(unittest.TestCase):
+    """The plate must not cost a core when nobody is looking at it.
+
+    This is a source-level check on purpose: the browser loop cannot run in the headless suite,
+    but removing the guard would silently reintroduce a full-rate render behind a minimised
+    window, which is exactly the sort of regression a user notices as "it heats my laptop".
+    """
+
+    def setUp(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.source = open(os.path.join(root, "hud", "app.js"), encoding="utf-8").read()
+
+    def test_hidden_window_skips_drawing(self):
+        self.assertIn("document.hidden", self.source)
+        guard = self.source.index("if (document.hidden)")
+        window = self.source[guard : guard + 400]
+        self.assertIn("requestAnimationFrame", window, "the loop must stay alive to resume")
+        self.assertIn("return", window)
+
+    def test_idle_plate_is_paced_and_active_work_is_not(self):
+        self.assertIn("IDLE_FRAME_MS", self.source)
+        self.assertIn('lastSituation !== "idle"', self.source)
+        self.assertIn("now - lastDraw < IDLE_FRAME_MS", self.source)
+
+
 class BridgeTests(unittest.TestCase):
     def setUp(self):
         self.bus = EventBus()

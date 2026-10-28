@@ -29,9 +29,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator, Sequence
 
+from ..resources import resource_path
 from .registry import Action, ActionContext, ActionFailed, DriverUnavailable, action
 
-SIDECAR_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "sidecars", "whatsapp")
+# The source checkout and the packaged payload deliberately use the same resolver.  A packaged
+# user must not need Node/Python paths or a working directory just to find this bundled sidecar.
+SIDECAR_DIR = str(resource_path("sidecars", "whatsapp"))
 RPC_VERSION = 1
 
 
@@ -78,7 +81,8 @@ class SidecarWhatsApp(WhatsAppBackend):
     """JSON-RPC client for the bundled Node sidecar."""
 
     def __init__(self, node_binary: str = "", script: str = "", timeout: float = 60.0):
-        self.node = node_binary or shutil.which("node") or ""
+        bundled_node = resource_path("node", "node.exe" if os.name == "nt" else "node")
+        self.node = node_binary or (str(bundled_node) if bundled_node.is_file() else "") or shutil.which("node") or ""
         self.script = script or os.path.join(SIDECAR_DIR, "sidecar.js")
         self.timeout = timeout
         self._process: subprocess.Popen[bytes] | None = None

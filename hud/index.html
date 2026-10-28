@@ -207,6 +207,9 @@
       <button data-tab="matrix" class="tab">Matrix</button>
       <button data-tab="comms" class="tab">Comms</button>
       <button data-tab="reserves" class="tab">Reserves</button>
+      <button data-tab="presence" class="tab">Presence</button>
+      <button data-tab="schedule" class="tab">Schedule</button>
+      <button data-tab="lessons" class="tab">Lessons</button>
     </nav>
 
     <section data-panel="transcript" class="tab-panel active">
@@ -257,6 +260,34 @@
       <div id="comms-requests" class="table"></div>
     </section>
 
+    <section data-panel="schedule" class="tab-panel">
+      <p class="hint">Work queued for later. A run that misses its window is <strong>skipped with a reason</strong> — a machine that slept for eight hours must not wake up and fire the whole backlog at a locked screen. GUI work is deferred while the session is locked, and one-shot tasks disable themselves once they have run.</p>
+      <div class="row">
+        <span id="schedule-stats" class="sig-value">—</span>
+        <button id="schedule-run" class="pill tiny">run due now</button>
+      </div>
+      <div id="schedule" class="table"></div>
+    </section>
+
+    <section data-panel="lessons" class="tab-panel">
+      <p class="hint">Mistake memory. Every failed action is distilled into a lesson keyed by the <em>kind</em> of failure, and the known fix is attached to the next error of that kind — so a retry starts corrected instead of repeating the same wrong assumption. Counted, never auto-executed.</p>
+      <div id="lessons-stats" class="sig-value">—</div>
+      <div id="lessons" class="plugins"></div>
+    </section>
+
+    <section data-panel="presence" class="tab-panel">
+      <p class="hint">Presence. Two independent senses: <em>voices</em> (how many people are talking, which one is the owner, male/female/<strong>unknown</strong>) and the <em>camera</em> (how many faces, is the owner among them). The camera needs your stored consent <strong>and</strong> the OS permission — without both it reports itself off and presence falls back to voice alone. Frames are never written to disk, and no setting in this program overrides the operating system. Every “should I speak?” verdict is kept with its reason, because an assistant that goes quiet for no visible reason looks broken.</p>
+      <div class="row">
+        <span id="presence-state" class="sig-value">—</span>
+        <button id="presence-look" class="pill tiny">look</button>
+        <button id="presence-grant" class="pill tiny">allow camera</button>
+        <button id="presence-revoke" class="pill tiny">camera off</button>
+      </div>
+      <div id="presence-camera" class="table"></div>
+      <div id="presence" class="plugins"></div>
+      <div id="presence-decision" class="table"></div>
+    </section>
+
     <section data-panel="reserves" class="tab-panel">
       <p class="hint">The model bench. Each model is added with the limits it is held to — requests and tokens per minute, per day and per week. A <em>reserve</em> is registered and quota-tracked but assigned to nobody until the Control Manager activates it, so spare capacity is known instead of guessed.</p>
       <div id="reserves" class="table"></div>
@@ -269,7 +300,7 @@
     </section>
 
     <section data-panel="machine" class="tab-panel">
-      <p class="hint">Courtesy to your machine: ORBYNTH runs below your interactive priority and yields during games, calls and presentations. Work you asked for right now is never paused.</p>
+      <p class="hint">Courtesy to your machine: ORBYNTH runs below your interactive priority, caps how many workers start at once, and yields during games, calls and presentations. Work you asked for right now is never paused. The worker line is the real admission limit, not an estimate.</p>
       <div id="machine" class="table"></div>
     </section>
 

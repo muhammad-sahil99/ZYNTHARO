@@ -58,6 +58,10 @@ class ModelQuota:
     tokens_day: deque[tuple[float, int]] = field(default_factory=deque)
     tokens_week: deque[tuple[float, int]] = field(default_factory=deque)
     cooldown_until: float = 0.0
+    #: When each window last emitted a warning. Without it every single call above 80% emitted
+    #: another warning, so the HUD reported "quota pressure" continuously and the signal became
+    #: noise exactly when it mattered.
+    warned_at: dict[str, float] = field(default_factory=dict)
     consecutive_errors: int = 0
     total_requests: int = 0
     total_tokens: int = 0
@@ -111,6 +115,12 @@ class ModelQuota:
             "tokens_week": [list(t) for t in self.tokens_week],
             "total_requests": self.total_requests,
             "total_tokens": self.total_tokens,
+            # A cooldown is a decision with a deadline (an expired key is locked for an hour).
+            # Persisting the counters but not the cooldown meant a restart immediately walked
+            # back into the same 401 and re-locked, once per restart.
+            "cooldown_until": self.cooldown_until,
+            "consecutive_errors": self.consecutive_errors,
+            "last_error": self.last_error,
         }
 
     def load(self, data: dict[str, Any], now: float) -> None:
@@ -120,6 +130,11 @@ class ModelQuota:
         self.tokens_week = deque((t, int(n)) for t, n in data.get("tokens_week", []) if now - t <= WEEK)
         self.total_requests = int(data.get("total_requests", 0))
         self.total_tokens = int(data.get("total_tokens", 0))
+        cooldown = float(data.get("cooldown_until", 0.0) or 0.0)
+        # Only restore a cooldown that has not already expired; a stale timestamp is history.
+        self.cooldown_until = cooldown if cooldown > now else 0.0
+        self.consecutive_errors = int(data.get("consecutive_errors", 0)) if cooldown > now else 0
+        self.last_error = str(data.get("last_error", ""))
 
 
 class QuotaManager:
@@ -183,7 +198,11 @@ class QuotaManager:
                 self._publish(QUOTA_EXHAUSTED, quota, name, current, limit, retry_after)
                 return QuotaDecision(False, f"{name} limit reached", retry_after, qualified)
             if limit is not None and current >= limit * self.warn_at:
-                self._publish(QUOTA_WARNING, quota, name, current, limit, 0.0)
+                # At most one warning per window per minute: a warning that fires on every call
+                # is not a warning, it is background noise.
+                if now - quota.warned_at.get(name, 0.0) >= 60.0:
+                    quota.warned_at[name] = now
+                    self._publish(QUOTA_WARNING, quota, name, current, limit, 0.0)
         return QuotaDecision(True, "ok", 0.0, qualified)
 
     def _publish(self, topic: str, quota: ModelQuota, window: str, current: int, limit: int, retry: float) -> None:
@@ -332,5 +351,16 @@ class QuotaManager:
         return 1.0 if not ratios else max(0.0, 1.0 - max(ratios))
 
     def ranked_by_headroom(self, candidates: Iterable[str]) -> list[tuple[str, float]]:
-        rows = [(q, self.headroom(self.models[q])) if q in self.models else (q, 1.0) for q in candidates]
+        now = self.clock()
+        rows: list[tuple[str, float]] = []
+        for qualified in candidates:
+            quota = self.models.get(qualified)
+            if quota is None:
+                rows.append((qualified, 1.0))
+                continue
+            # Prune first: ``headroom`` reads the raw deques, so a request from two minutes ago
+            # still counted against the per-minute limit and the Steward avoided a model that
+            # was in fact idle.
+            quota.prune(now)
+            rows.append((qualified, self.headroom(quota)))
         return sorted(rows, key=lambda r: r[1], reverse=True)

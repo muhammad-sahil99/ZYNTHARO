@@ -30,9 +30,12 @@ from .ops.languages import ocr_languages
 from .ops.preflight import TaskRequirements
 from .plugins.forge import Forge
 from .plugins.loader import PluginHost
+from .resources import resource_path
 from .voice.session import TextOnlyVoice, VoiceSession
 
-HUD_DIR = Path(__file__).resolve().parent.parent / "hud"
+# User installations resolve the bundled HUD from PyInstaller's payload; source runs resolve it
+# from the repository.  Nothing relies on the current working directory.
+HUD_DIR = resource_path("hud")
 
 
 @dataclass
@@ -60,6 +63,13 @@ class Stack:
     verifier: Any = None
     sensors: Any = None
     index: Any = None
+    #: Speaker recognition, the consent-gated camera, and the etiquette layer that fuses them.
+    speakers: Any = None
+    camera: Any = None
+    presence: Any = None
+    #: Failure memory and work queued for later.
+    lessons: Any = None
+    scheduler: Any = None
 
     def shutdown(self) -> None:
         if self.index is not None:
@@ -77,12 +87,26 @@ class Stack:
                 self.voice.stop()
             except Exception:
                 pass
+        if self.scheduler is not None:
+            try:
+                self.scheduler.stop()
+            except Exception:
+                pass
         self.orchestrator.shutdown()
         if self.hud is not None:
             try:
                 self.hud.bridge.stop()
             except Exception:
                 pass
+        # The automation browser is the largest thing this app can leave behind: release it
+        # before the supervisor so a Playwright Chromium (driver + browser + tabs) does not
+        # keep several hundred megabytes alive after the task is over.
+        try:
+            from .actions import browser as browser_actions
+
+            browser_actions.release()
+        except Exception:
+            pass
         # Last: everything we started dies with us (sidecar, automation browser, workers).
         if self.supervisor is not None:
             try:
@@ -171,7 +195,11 @@ def build_stack(
 
     owner = OwnerRegistry(config.home_path, bus)
     registry_actions.owner = owner
-    governor = ResponsivenessGovernor(bus) if config.ops.governor_enabled else None
+    governor = (
+        ResponsivenessGovernor(bus, max_workers=config.safety.max_parallel_agents)
+        if config.ops.governor_enabled
+        else None
+    )
     # The preflight asks the governor what is busy: without that, its "machine busy" branch could
     # only ever be reached from a test, never from a real game or call (contract 22.11).
     preflight = Preflight(
@@ -284,6 +312,86 @@ def build_stack(
         sensors=sensors,
         index=search_index,
     )
+
+    # Presence: who is talking, who is in the room, and whether speaking aloud is appropriate.
+    # Created here (not inside the HUD) because the agent tools and the interface must see the
+    # same instance; a second CameraService would mean two consent records and two cameras open.
+    from .actions import presence as presence_actions
+    from .ops.presence import PresenceController
+    from .vision.camera import CameraService
+    from .voice.speakers import SpeakerRegistry
+
+    speaker_registry = SpeakerRegistry(config.home_path, bus)
+    camera_service = CameraService(config.home_path, bus)
+    presence_controller = PresenceController(speaker_registry, camera_service, bus)
+    presence_actions.set_services(
+        presence_actions.PresenceServices(
+            speakers=speaker_registry,
+            camera=camera_service,
+            presence=presence_controller,
+            voice=voice,
+            config=config,
+            bus=bus,
+        )
+    )
+    stack.speakers = speaker_registry
+    stack.camera = camera_service
+    stack.presence = presence_controller
+
+    # Live utterances are identified from the same captured buffer that gets transcribed: one
+    # microphone, no second poller. Without this, "who is talking" would only work on files.
+    if voice is not None and hasattr(voice, "on_audio"):
+        from .voice.speakers import analyse_pcm
+
+        def _identify_speakers(pcm: bytes, rate: int) -> None:
+            presence_controller.observe_voice(analyse_pcm(pcm, rate, registry=speaker_registry))
+
+        voice.on_audio = _identify_speakers
+
+    # Scheduled work, and the memory of failures that should not repeat. The gate is the
+    # preflight layer: GUI work is deferred while the session is locked, and a window missed by
+    # more than the grace period is skipped with a reason instead of replayed in a burst.
+    from .actions import schedule as schedule_actions
+    from .ops.lessons import LessonBook
+    from .ops.schedule import Scheduler
+
+    lesson_book = LessonBook(config.home_path, bus)
+    # Attached to the registry, which is what puts the known fix onto the next failure of the
+    # same kind and what agents read in their system prompt before choosing a tool.
+    registry_actions.lessons = lesson_book
+
+    def _scheduled_gate(entry: Any) -> tuple[bool, str]:
+        if not getattr(entry, "needs_gui", False):
+            return True, ""
+        try:
+            from .ops.preflight import TaskRequirements
+
+            decision = orchestrator.preflight_task(
+                TaskRequirements(gui=True, unlocked_session=True, background_ok=True), origin="schedule"
+            )
+        except Exception as exc:  # noqa: BLE001 - an unavailable gate is a refusal, never a pass
+            return False, f"preflight unavailable: {exc}"
+        if decision is None:
+            return True, ""
+        return bool(getattr(decision, "can_run", False)), "; ".join(getattr(decision, "reasons", []) or [])
+
+    def _run_scheduled(entry: Any) -> Any:
+        agent = orchestrator.spawn(role="operative", name=f"Scheduled-{entry.id[:4]}")
+        return agent.run_task(
+            f"scheduled: {entry.title}",
+            entry.objective,
+            context="Queued through the scheduler; nobody is watching this run, so report what happened.",
+            max_steps=20,
+        )
+
+    scheduler = Scheduler(bus, runner=_run_scheduled, gate=_scheduled_gate, path=config.home_path / "schedule.json")
+    schedule_actions.set_services(
+        schedule_actions.ScheduleServices(scheduler=scheduler, lessons=lesson_book, bus=bus, config=config)
+    )
+    if start_agents:
+        scheduler.start()
+    stack.lessons = lesson_book
+    stack.scheduler = scheduler
     if with_hud:
         from .hud.service import HudService
 
@@ -307,6 +415,11 @@ def build_stack(
             index=stack.index,
             comms=comms,
             reserves=reserves,
+            speakers=speaker_registry,
+            camera=camera_service,
+            presence=presence_controller,
+            lessons=lesson_book,
+            scheduler=scheduler,
         )
         hud.forge = forge  # type: ignore[attr-defined]
         if voice is not None:
@@ -1031,7 +1144,7 @@ def cmd_capabilities(args: argparse.Namespace) -> int:
 
 def cmd_gate(args: argparse.Namespace) -> int:
     """Run the master release gate (contract 22.3)."""
-    tools_dir = Path(__file__).resolve().parent.parent / "tools"
+    tools_dir = resource_path("tools")
     if str(tools_dir) not in sys.path:
         sys.path.insert(0, str(tools_dir))
     import release_gate  # type: ignore[import-not-found]

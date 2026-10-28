@@ -661,6 +661,26 @@ class GovernorTests(unittest.TestCase):
         governor.evaluate([])
         self.assertEqual(events, ["paused", "resumed"])
 
+    def test_worker_cap_shrinks_before_expensive_work_is_admitted(self):
+        """The cap must exist at admission time, not after Chromium or OCR already started."""
+        quiet = _quiet_governor(max_workers=4)
+        self.assertEqual(quiet.worker_limit(4, quiet.evaluate([])), 4)
+        mild = _quiet_governor(max_workers=4, load_provider=lambda: 0.7)
+        state = mild.evaluate([])
+        self.assertFalse(state.paused[BACKGROUND], "mild pressure must not stop all work")
+        self.assertEqual(mild.worker_limit(4, state), 2, "mild pressure halves admission")
+        heavy = ResponsivenessGovernor(detector=lambda: [], load_provider=lambda: 1.2, max_workers=4)
+        state = heavy.evaluate([])
+        self.assertTrue(state.paused[BACKGROUND])
+        self.assertEqual(heavy.worker_limit(4, state), 1)
+        self.assertEqual(heavy.worker_limit(4, state, CRITICAL), 4, "the user's own request is not courtesy-capped")
+
+    def test_a_cap_never_reaches_zero_workers(self):
+        # A zero cap would look like "paused" but could deadlock a caller waiting for progress.
+        governor = ResponsivenessGovernor(detector=lambda: [], load_provider=lambda: 9.0, max_workers=1)
+        self.assertEqual(governor.worker_limit(8, governor.evaluate([])), 1)
+        self.assertEqual(governor.worker_limit(0, governor.evaluate([])), 1)
+
     def test_priority_change_never_raises(self):
         governor = _quiet_governor()
         self.assertIn(governor.apply_priority("below_normal"), {"below_normal", "normal"})

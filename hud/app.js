@@ -36,6 +36,11 @@
     // fleet comms and the model bench (reserve models with declared limits)
     comms: null,
     reserves: null,
+    // presence: speakers, camera consent and the etiquette verdicts
+    presence: null,
+    // queued work and the failure patterns learned from this machine
+    schedule: null,
+    lessons: null,
     searchHits: [],
     scene: null,
     // 3D explanation window: the renderer is driven by the main animation loop, so closing the
@@ -168,6 +173,82 @@
       if (changed) coreState("index scan", changed + " document(s) changed");
       renderIndex();
     },
+    /* ---- scheduled work and learned failures ---- */
+    "task.scheduled": (e) => {
+      core.setShape("helix");
+      core.pulseEnergy(0.25);
+      const p = e.payload || {};
+      coreState("queued for later", ((p.task || {}).title || "") + " in " + (p.in_seconds || 0) + "s");
+      renderScheduleSoon();
+    },
+    "task.due": (e) => {
+      core.pulseShear(0.3);
+      coreState("scheduled work starting", ((e.payload || {}).task || {}).title || "");
+      renderScheduleSoon();
+    },
+    "task.skipped": (e) => {
+      // A skipped run is a decision, not a quiet no-op: it is why nothing happened last night.
+      core.pulseShear(0.45);
+      const p = e.payload || {};
+      coreState("schedule skipped", ((p.task || {}).title || "") + " — " + (p.reason || ""));
+      renderScheduleSoon();
+    },
+    "task.schedule_result": (e) => {
+      core.pulseEnergy(0.2);
+      const p = e.payload || {};
+      coreState("scheduled run finished", ((p.task || {}).title || "") + " · " + (p.outcome || ""));
+      renderScheduleSoon();
+    },
+    "lesson.recorded": (e) => {
+      const p = e.payload || {};
+      core.pulseShear(0.2);
+      coreState("lesson learned", (p.action || "") + " ×" + (p.hits || 1));
+      renderLessonsSoon();
+    },
+
+    /* ---- presence: who is speaking, who is in the room, may I talk ---- */
+    "voice.speaker": (e) => {
+      const p = e.payload || {};
+      core.pulseShear(0.16);
+      coreState("speaker", (p.active || "unknown") + " · " + (p.gender || "unknown"));
+      renderPresenceSoon();
+    },
+    "voice.overlap": (e) => {
+      // Two people talking at once is a state, not an error: the core reports it and the
+      // assistant waits instead of picking one of them to answer.
+      core.pulseShear(0.3);
+      coreState("two voices", (e.payload.speakers || 0) + " speaking at once — holding the turn");
+      renderPresenceSoon();
+    },
+    "speaker.enrolled": (e) => {
+      core.pulseEnergy(0.3);
+      coreState("voice enrolled", (e.payload.label || "") + " · " + (e.payload.kind || "guest"));
+      renderPresenceSoon();
+    },
+    "camera.state": (e) => {
+      const p = e.payload || {};
+      if (p.state === "granted") core.pulseEnergy(0.2); else core.pulseShear(0.35);
+      coreState("camera " + (p.state || "?"), p.os_permission ? "os permission: " + p.os_permission : "");
+      renderPresenceSoon();
+    },
+    "camera.look": (e) => {
+      const p = e.payload || {};
+      core.pulseEnergy(0.1);
+      coreState("camera", (p.face_count || 0) + " face(s) · " + (p.strangers || 0) + " unrecognised");
+      renderPresenceSoon();
+    },
+    "camera.face": (e) => {
+      core.pulseEnergy(0.2);
+      coreState("face " + (e.payload.action || ""), e.payload.label || "");
+      renderPresenceSoon();
+    },
+    "presence.decision": (e) => {
+      const p = e.payload || {};
+      if (p.audible) core.pulseEnergy(0.25); else core.pulseShear(0.25);
+      coreState("etiquette: " + (p.mode || ""), p.reason || "");
+      renderPresenceSoon();
+    },
+
     /* ---- fleet comms and the model bench ---- */
     "agent.comms": (e) => {
       core.pulseShear(0.15);
@@ -274,6 +355,7 @@
   const AUDIO_TOPICS = {
     "voice.wake": 0.45, "voice.listening": 0.25, "voice.speaking": 0.5,
     "voice.transcript": 0.2, "voice.language": 0.15,
+    "voice.speaker": 0.2, "voice.overlap": 0.35, "presence.decision": 0.15,
   };
   const TRAFFIC_TOPICS = {
     "action.invoked": 0.5, "action.result": 0.35, "action.denied": 0.5,
@@ -645,6 +727,9 @@
     if (snapshot.preflight) state.preflight = snapshot.preflight;
     if (snapshot.comms) state.comms = snapshot.comms;
     if (snapshot.reserves) state.reserves = snapshot.reserves;
+    if (snapshot.presence) state.presence = snapshot.presence;
+    if (snapshot.schedule) state.schedule = snapshot.schedule;
+    if (snapshot.lessons) state.lessons = snapshot.lessons;
     if (snapshot.hardware) state.hardware = snapshot.hardware;
     if (snapshot.capabilities) state.capabilities = snapshot.capabilities;
     if (snapshot.search) state.search = snapshot.search;
@@ -668,6 +753,9 @@
     renderCapabilities();
     renderComms();
     renderReserves();
+    renderPresence();
+    renderSchedule();
+    renderLessons();
     wires.setAgents(state.agents);
     renderWidgets();
     deriveBase();
@@ -855,6 +943,174 @@
     }
   }
 
+  /* ---- scheduled work and learned failures ---- */
+  let scheduleSoon = null;
+  let lessonsSoon = null;
+  function renderScheduleSoon() {
+    if (scheduleSoon) return;
+    scheduleSoon = setTimeout(() => {
+      scheduleSoon = null;
+      renderSchedule();
+    }, 120);
+  }
+  function renderLessonsSoon() {
+    if (lessonsSoon) return;
+    lessonsSoon = setTimeout(() => {
+      lessonsSoon = null;
+      renderLessons();
+    }, 120);
+  }
+
+  function renderSchedule() {
+    const schedule = state.schedule || {};
+    const stats = $("schedule-stats");
+    if (stats) {
+      stats.textContent =
+        (schedule.enabled || 0) + " enabled / " + (schedule.count || 0) + " total · loop " +
+        (schedule.running ? "running" : "stopped") +
+        (schedule.policy ? " · grace " + schedule.policy.grace_seconds + "s · max " + schedule.policy.max_per_tick + "/tick" : "");
+    }
+    const container = $("schedule");
+    if (!container) return;
+    container.innerHTML = "";
+    const tasks = schedule.tasks || [];
+    if (!tasks.length) {
+      container.innerHTML =
+        '<p class="hint">Nothing queued. A task added with a delay or an interval appears here with its next run and its last outcome — and a skipped run says why it was skipped.</p>';
+      return;
+    }
+    tasks.forEach((task) => {
+      const row = document.createElement("div");
+      const skipped = /^missed|^deferred/.test(task.last_reason || "");
+      row.className = "trow" + (task.enabled ? "" : " ") + (skipped ? " warning" : "");
+      const when = task.enabled
+        ? (task.in_seconds === null ? "—" : "in " + task.in_seconds + "s")
+        : "done";
+      row.innerHTML =
+        '<span class="m" dir="auto">' + escapeHtml(task.title || task.id) + "</span>" +
+        '<span style="grid-column: span 2" dir="auto">' + escapeHtml(when) +
+        (task.every_seconds ? " · every " + task.every_seconds + "s" : " · once") +
+        (task.needs_gui ? " · needs desktop" : "") + "</span>" +
+        '<span class="status ' + (skipped ? "warning" : task.enabled ? "" : "") + '" dir="auto">' +
+        escapeHtml((task.runs || 0) + " run(s)" + (task.last_outcome ? " · " + task.last_outcome : "") +
+          (task.last_reason ? " · " + task.last_reason : "")) + "</span>";
+      container.appendChild(row);
+    });
+  }
+
+  function renderLessons() {
+    const lessons = state.lessons || {};
+    const stats = $("lessons-stats");
+    if (stats) {
+      stats.textContent =
+        (lessons.lessons || 0) + " pattern(s) · " + (lessons.hits || 0) + " failure(s) counted · " +
+        (lessons.with_fix || 0) + " with a known fix";
+    }
+    const container = $("lessons");
+    if (!container) return;
+    container.innerHTML = "";
+    const rows = lessons.top || [];
+    if (!rows.length) {
+      container.innerHTML =
+        '<p class="hint">Nothing learned yet. Failures are recorded as they happen; a lesson only appears here once there is a fix worth trying.</p>';
+      return;
+    }
+    rows.forEach((lesson) => {
+      const node = document.createElement("div");
+      node.className = "plugin";
+      node.innerHTML =
+        '<div class="p-name" dir="auto">' + escapeHtml(lesson.action || "?") +
+        " <span class='chip'>" + escapeHtml("×" + (lesson.hits || 1)) + "</span></div>" +
+        '<div class="p-meta" dir="auto">' + escapeHtml(lesson.cause || "") + " → " + escapeHtml(lesson.fix || "") + "</div>";
+      container.appendChild(node);
+    });
+  }
+
+  /* ---- presence ---- */
+  let presenceSoon = null;
+  function renderPresenceSoon() {
+    if (presenceSoon) return;
+    presenceSoon = setTimeout(() => {
+      presenceSoon = null;
+      renderPresence();
+    }, 120);
+  }
+
+  function renderPresence() {
+    const presence = state.presence || {};
+    const camera = presence.camera || {};
+    const consent = camera.consent || {};
+    const snap = presence.snapshot || {};
+    const voice = snap.voice || {};
+    const stateNode = $("presence-state");
+    if (stateNode) {
+      const aud = snap.audience !== undefined ? snap.audience : 0;
+      stateNode.textContent =
+        (voice.speaker_count || 0) + " voice(s) · " + aud + " in the room · " +
+        (snap.owner_present ? "owner present" : "owner not identified") +
+        (snap.strangers_present ? " · stranger present" : "");
+    }
+    const cameraNode = $("presence-camera");
+    if (cameraNode) {
+      cameraNode.innerHTML = "";
+      const canSee = camera.can_detect && consent.allows_capture;
+      const row = document.createElement("div");
+      row.className = "trow" + (canSee ? "" : " warning");
+      row.innerHTML =
+        '<span class="m" dir="auto">camera</span>' +
+        '<span style="grid-column: span 2" dir="auto">' +
+        escapeHtml("consent " + (consent.state || "unknown") + " · os " + (consent.os_permission || "unknown") +
+          " · " + (camera.can_recognise ? "recognition" : "detection only")) +
+        "</span>" +
+        '<span class="status ' + (canSee ? "" : "warning") + '">' + (canSee ? "live" : "off") + "</span>";
+      cameraNode.appendChild(row);
+      if (!canSee && camera.reason) {
+        const why = document.createElement("div");
+        why.className = "trow";
+        why.innerHTML =
+          '<span class="m" dir="auto">why</span>' +
+          '<span style="grid-column: span 3" dir="auto">' + escapeHtml(camera.reason) + "</span>";
+        cameraNode.appendChild(why);
+      }
+    }
+    const people = $("presence");
+    if (people) {
+      people.innerHTML = "";
+      const rows = presence.people || [];
+      if (!rows.length) {
+        people.innerHTML =
+          '<p class="hint">Nobody enrolled yet. Enrol a voice from a recording and a face from the camera (once consent is granted) and this becomes a roster instead of a guess.</p>';
+      }
+      rows.slice(0, 12).forEach((person) => {
+        const node = document.createElement("div");
+        node.className = "plugin";
+        node.innerHTML =
+          '<div class="p-name" dir="auto">' + escapeHtml(person.label || "?") +
+          " <span class='chip'>" + escapeHtml(person.kind || "guest") + "</span></div>" +
+          '<div class="p-meta" dir="auto">' + escapeHtml((person.gender_guess || "unknown") +
+            (person.pitch_hz ? " · ~" + Math.round(person.pitch_hz) + " Hz" : "") +
+            " · " + (person.samples || 0) + " sample(s)") + "</div>";
+        people.appendChild(node);
+      });
+    }
+    const decisionNode = $("presence-decision");
+    if (decisionNode) {
+      decisionNode.innerHTML = "";
+      const rows = snap.recent_turns || [];
+      if (!rows.length) {
+        decisionNode.innerHTML = '<p class="hint">No turns heard yet. Nothing here is inferred from silence.</p>';
+      }
+      rows.slice(-6).forEach((turn) => {
+        const row = document.createElement("div");
+        row.className = "trow";
+        row.innerHTML =
+          '<span class="m" dir="auto">' + escapeHtml(turn.label || "unknown voice") + "</span>" +
+          '<span style="grid-column: span 3" dir="auto">' + escapeHtml((turn.seconds || 0) + "s") + "</span>";
+        decisionNode.appendChild(row);
+      });
+    }
+  }
+
   function renderReserves() {
     const container = $("reserves");
     if (!container) return;
@@ -911,6 +1167,7 @@
     const rows = [
       ["priority", machine.priority || "below_normal", "ORBYNTH runs under your interactive work"],
       ["background", machine.paused ? "paused — " + (machine.busy_reason || machine.reason || "machine busy") : "running", ""],
+      ["workers", (machine.worker_cap || 1) + " at a time" + (machine.worker_ceiling ? " (ceiling " + machine.worker_ceiling + ")" : ""), "parallel work admitted before it starts"],
       ["session", machine.session_locked ? "locked" : "unlocked", "input is never injected into a locked desktop"],
       ["power", machine.on_ac === false ? "battery " + (machine.battery_pct || "?") + "%" : "mains", ""],
       ["languages", machine.languages || "en", "OCR packs, speech and text direction"],
@@ -1779,6 +2036,24 @@
     $("hw-refresh").addEventListener("click", () => {
       if (!send("hw.query", { window: 60 })) notice("No core connected — the sensor monitor needs a live core.", "warning", false);
     });
+    $("schedule-run").addEventListener("click", () => {
+      if (!send("schedule.run")) notice("No core connected — the scheduler needs a live core.", "warning", false);
+    });
+    $("presence-look").addEventListener("click", () => {
+      if (!send("presence", { action: "look" })) notice("No core connected — presence needs a live core.", "warning", false);
+    });
+    ["presence-grant", "presence-revoke"].forEach((id) => {
+      const button = $(id);
+      if (!button) return;
+      button.addEventListener("click", () => {
+        // Consent is the owner's decision, taken here on their own screen. Agents cannot do this
+        // without the camera.enroll capability, and the OS permission is never overridden.
+        const decision = id === "presence-grant" ? "grant" : "revoke";
+        if (!send("presence", { action: "consent", decision })) {
+          notice("No core connected — camera consent needs a live core.", "warning", false);
+        }
+      });
+    });
     $("scene-close").addEventListener("click", closeScene);
     $("scene-pop").addEventListener("click", () => $("scene").classList.toggle("pop"));
     makeDraggable($("scene"), $("scene").querySelector(".scene-head"));
@@ -1812,9 +2087,31 @@
   /* ------------------------------------------------------------------ animation */
   let last = 0;
   let frameCount = 0;
+  // Resource policy for the plate. A desktop operative that keeps a GPU busy while the window
+  // is minimised is not "lightweight", whatever its process list says.
+  const IDLE_FRAME_MS = 1000 / 30;
+  let lastDraw = 0;
+
   function loop(now) {
+    // Hidden or minimised: keep the loop alive so it resumes instantly, draw nothing at all.
+    // The situation is not updated either, so resuming restores from real state on the next
+    // frame rather than from a stale animation clock.
+    if (document.hidden) {
+      last = now;
+      lastDraw = now;
+      window.requestAnimationFrame(loop);
+      return;
+    }
+    // Idle plate runs at 30 fps. Anything happening — speaking, acting, browsing, an alert —
+    // gets the full rate, because that is when the extra frames carry information.
+    const busy = Boolean(lastSituation) && lastSituation !== "idle" && lastSituation !== "offline";
+    if (!busy && now - lastDraw < IDLE_FRAME_MS) {
+      window.requestAnimationFrame(loop);
+      return;
+    }
     const delta = now - last;
     last = now;
+    lastDraw = now;
     // the situation drives every layer before anything is drawn, so the plate is never a frame
     // behind the event it is showing
     if (fx) applyEffects(now);

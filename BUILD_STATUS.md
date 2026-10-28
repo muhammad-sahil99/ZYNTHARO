@@ -23,7 +23,8 @@ Read the three markers literally:
 | Supervisor: owned child processes, orphans reconciled, cleanup | done | `tests/test_ops.py`, gate `supervisor_cleanup` |
 | Owner gate: PIN for irreversible work, per-OS-user profiles | done | gate `owner_gate` |
 | Preflight (locked screen, power, GUI needs, deferral) | done | gate `preflight` |
-| Responsiveness governor (games, calls, load) | done | gate `governor` |
+| Responsiveness governor (priority, pauses, admission cap) | done | gate `governor`, `tests/test_ops.py` (`worker_limit`) |
+| Resource admission: bounded team batches, browser release on shutdown, idle HUD pacing | done | `tests/test_agents_plugins.py` (`bounded_batches`), `tests/test_actions.py` (`browser_release`), `tests/test_hud.py` (`AnimationPowerTests`) |
 | Language/OCR/RTL handling | partial | gate `language_rtl` |
 | Billing modes (BYOK default, gateway, local-only) | partial | gate `billing_modes` |
 | Model catalogue (signed, rollback, retired IDs) | partial | gate `catalog_rollback` |
@@ -47,9 +48,15 @@ Read the three markers literally:
 | Fleet comms: memos, help requests, answers, file handoff, stored threads | done | `tests/test_comms.py`, `orbynth/agents/comms.py` |
 | Model bench: limits intake (rpm/rpd/rpw, tpm/tpd/tpw), reserve activate/retire | done | `tests/test_reserve.py`, `orbynth/llm/reserve.py` |
 | Weekly quota windows enforced end to end | done | `tests/test_reserve.py`, `orbynth/llm/quotas.py` |
+| Speaker recognition: diarization, male/female/unknown estimate, voice enrolment | done (analysis is stdlib) | `tests/test_speakers.py`, `orbynth/voice/speakers.py` |
+| Camera presence: consent gate, face detection, face enrolment | partial, hardware-bound | `tests/test_camera.py`, `orbynth/vision/camera.py`; needs a camera + `opencv-python`, identity needs dlib |
+| Etiquette: speak, shorten, screen-only, wait or stay silent, with a reason | done | `tests/test_presence.py`, `orbynth/ops/presence.py` |
+| Mistake memory: failures distilled to lessons, known fix attached to the next error | done | `tests/test_lessons.py`, `orbynth/ops/lessons.py` |
+| Scheduled work: one-shot and recurring, grace window, gated GUI runs, bounded tick | done | `tests/test_schedule.py`, `orbynth/ops/schedule.py` |
 | Semantic search (embeddings, `sqlite-vec`) | unbuilt | lexical only; see LIMITATIONS |
 | MCP client/server, local REST/WS API, SDKs | unbuilt | spec 15 |
-| Installer for a machine with no coding environment | unbuilt | spec 19; see OWNER_REQUIREMENTS |
+| Windows application payload builder (embedded Python/HUD/sidecar/browser manifest) | partial | `tools/build_windows_bundle.py`, `tests/test_packaging.py`; requires Windows release inputs |
+| Signed Windows installer definition and hash-validated input gate | partial | `installer/ORBYNTH.iss`, `tools/build_windows_installer.py`, `tests/test_packaging.py`; needs a Windows signing environment and clean-VM acceptance |
 
 ## Verification commands
 
@@ -68,8 +75,8 @@ sign-off recorded in them.
 
 ## What the numbers on this machine mean
 
-The Capability Matrix on this host reports **0 green / 135 provisional / 14 unavailable** tool
-rows. That is not a regression and it is not modesty: *green* requires a recorded successful run
+The Capability Matrix on this host reports **0 green / 155 provisional / 24 unavailable** tool
+rows (179 declared tools). That is not a regression and it is not modesty: *green* requires a recorded successful run
 with evidence from this machine, and the automated suite runs against an offline `echo` provider,
 so its runs do not count as proof of a desktop capability. A tool becomes green the first time
 it really runs here and its run is recorded in `artifacts/capability_evidence.json`.

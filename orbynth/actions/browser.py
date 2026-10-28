@@ -123,6 +123,14 @@ class BrowserController:
     def chrome_geometry(self) -> dict[str, Any]: raise NotImplementedError
     def downloads(self) -> list[dict[str, Any]]: raise NotImplementedError
 
+    def release(self) -> dict[str, Any]:
+        """Let go of an owned browser so its memory is returned to the user.
+
+        The default is honest rather than silent: a controller that did not start a browser
+        reports that it owns nothing to close. Overriding is what frees real resources.
+        """
+        return {"released": False, "reason": "this controller does not own a browser process"}
+
 
 class PlaywrightController(BrowserController):
     """Managed browser via Playwright (isolated profile)."""
@@ -153,6 +161,37 @@ class PlaywrightController(BrowserController):
         self._browser = launcher.launch(**args)
         self._context = self._browser.new_context()
         return self
+
+    def release(self) -> dict[str, Any]:
+        """Close the managed browser this controller launched (and nothing the user owns).
+
+        Without this, quitting ORBYNTH left a Chromium holding hundreds of megabytes: the
+        Playwright driver, the browser and every tab lived until the OS reaped them.
+        """
+        released = False
+        error = ""
+        if self._context is not None:
+            try:
+                self._context.close()
+                released = True
+            except Exception as exc:  # noqa: BLE001 - closing must never raise at shutdown
+                error = str(exc)[:200]
+        if self._browser is not None:
+            try:
+                self._browser.close()
+                released = True
+            except Exception as exc:  # noqa: BLE001
+                error = error or str(exc)[:200]
+        if self._playwright is not None:
+            try:
+                self._playwright.stop()
+                released = True
+            except Exception as exc:  # noqa: BLE001
+                error = error or str(exc)[:200]
+        self._context = None
+        self._browser = None
+        self._playwright = None
+        return {"released": released, "reason": error or "managed browser closed"}
 
     def _page(self) -> Any:
         if self._context is None:
@@ -818,6 +857,24 @@ def set_controller_factory(factory: Callable[[], BrowserController] | None) -> N
     _FACTORY = factory
 
 
+def release() -> dict[str, Any]:
+    """Release whatever browser ORBYNTH is holding, if anything.
+
+    Called on shutdown and available as an action, so an idle automation browser does not keep
+    several hundred megabytes of the user's RAM after the task that needed it has finished.
+    """
+    global _CONTROLLER
+    current = _CONTROLLER
+    if current is None:
+        return {"released": False, "reason": "no browser controller is open"}
+    try:
+        report = current.release()
+    except Exception as exc:  # noqa: BLE001 - shutdown must not raise
+        report = {"released": False, "reason": f"release failed: {exc}"}
+    _CONTROLLER = None
+    return report
+
+
 def controller() -> BrowserController:
     global _CONTROLLER
     if _CONTROLLER is None:
@@ -928,6 +985,21 @@ def _require() -> BrowserController:
 def browser_tabs(ctx: ActionContext) -> Any:
     tabs = _require().tabs()
     return {"count": len(tabs), "tabs": [t.to_json() for t in tabs]}
+
+
+@action(
+    name="browser_release",
+    description=(
+        "Give the automation browser back: close the managed browser ORBYNTH launched and free "
+        "its memory. An attached user browser is left running and the result says so. Use when "
+        "browser work is finished."
+    ),
+    capability="browser.tabs",
+    group="browser",
+    parameters={"type": "object", "properties": {}},
+)
+def browser_release(ctx: ActionContext) -> Any:
+    return release()
 
 
 @action(
@@ -1536,6 +1608,7 @@ def browser_wait_for(ctx: ActionContext, selector: str, state: str = "appear", t
 all_actions = lambda: [  # noqa: E731
     browser_attach,
     browser_tabs,
+    browser_release,
     browser_open_tab,
     browser_close_tab,
     browser_switch_tab,

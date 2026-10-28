@@ -218,6 +218,9 @@ class ActionRegistry:
         self.risk_tiers = RiskTiers()
         #: Optional owner registry; enforced only when a context opts in (contract 22.7).
         self.owner: Any = None
+        #: Optional LessonBook (see ``ops/lessons.py``): a failure that repeats gets the known fix
+        #: attached to its error text, so the next attempt starts corrected instead of blind.
+        self.lessons: Any = None
         #: Optional Capability Matrix (4.7). When present, a tool with no driver on this
         #: machine is never offered to a model: it is reported as unavailable instead, which
         #: is the difference between "cannot" and "fails halfway through a task".
@@ -226,6 +229,20 @@ class ActionRegistry:
         #: memory store is attached, and attached to the result so a report can cite them.
         self.receipts_enabled: bool = True
         self.last_receipt: Receipt | None = None
+
+    def _learned(self, action_name: str, error: str) -> str:
+        """Attach the best known fix to a repeated failure, and record this one.
+
+        Deliberately silent when the book is missing or broken: an action that failed must
+        report its own failure, never a secondary error raised by the memory add-on.
+        """
+        book = self.lessons
+        if book is None:
+            return error
+        try:
+            return book.annotate(action_name, error)
+        except Exception:  # noqa: BLE001 - see docstring
+            return error
 
     def approve(self, action_name: str, approved: bool = True) -> None:
         if approved:
@@ -466,9 +483,11 @@ class ActionRegistry:
         except (ConfirmationRequired, CapabilityError) as exc:
             result = ActionResult.failure(str(exc))
         except DriverUnavailable as exc:
-            result = ActionResult.failure(str(exc), exc.evidence)
+            # A missing driver is the most repeatable failure there is: the known fix (which
+            # install command actually helps) is exactly what the next attempt needs.
+            result = ActionResult.failure(self._learned(name, str(exc)), exc.evidence)
         except ActionFailed as exc:
-            result = ActionResult.failure(str(exc), exc.evidence)
+            result = ActionResult.failure(self._learned(name, str(exc)), exc.evidence)
         except TypeError as exc:
             # A model passing wrong argument names is a common, recoverable event.
             result = ActionResult.failure(

@@ -10,7 +10,7 @@ This is the **declared surface** of the product, across every platform the tools
 | `provisional` | implemented and usable here, but not yet proven on a real app | no — every receipt from it is labelled UNVERIFIED |
 | `unavailable` | no driver here, or the wrong platform | no — hidden from agents, shown to the user as "not available on this machine" |
 
-**159 declared tool(s)** in 12 group(s): 0 green, 135 provisional, 24 unavailable on every supported platform. 0 tool(s) have recorded real runs.
+**179 declared tool(s)** in 16 group(s): 0 green, 155 provisional, 24 unavailable on every supported platform. 0 tool(s) have recorded real runs.
 
 ## Declared tools
 
@@ -41,6 +41,7 @@ This is the **declared surface** of the product, across every platform the tools
 | `browser_model` | browser | browser.extract | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
 | `browser_navigate` | browser | browser.navigate | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
 | `browser_open_tab` | browser | browser.tabs | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
+| `browser_release` | browser | browser.tabs | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
 | `browser_reload` | browser | browser.navigate | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
 | `browser_screenshot` | browser | browser.extract | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
 | `browser_scroll` | browser | browser.scroll | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
@@ -48,6 +49,11 @@ This is the **declared surface** of the product, across every platform the tools
 | `browser_tabs` | browser | browser.tabs | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
 | `browser_type` | browser | browser.type | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
 | `browser_wait_for` | browser | browser.extract | provisional | 0 (0) | n/a | — | — | — | A driven profile is separate from the user's own browser unless CDP is attached. |
+| `camera_consent` | camera | camera.enroll | provisional | 0 (0) | n/a | — | — | — | Capture needs the owner's stored consent AND the OS permission; there is no override, and frames are never written to disk. |
+| `camera_enroll` | camera | camera.enroll | provisional | 0 (0) | n/a | — | — | — | Capture needs the owner's stored consent AND the OS permission; there is no override, and frames are never written to disk. |
+| `camera_forget` | camera | camera.enroll | provisional | 0 (0) | n/a | — | — | — | Capture needs the owner's stored consent AND the OS permission; there is no override, and frames are never written to disk. |
+| `camera_look` | camera | camera.view | provisional | 0 (0) | n/a | — | — | — | Capture needs the owner's stored consent AND the OS permission; there is no override, and frames are never written to disk. |
+| `camera_status` | camera | camera.view | provisional | 0 (0) | n/a | — | — | — | Capture needs the owner's stored consent AND the OS permission; there is no override, and frames are never written to disk. |
 | `csv_read` | office | office.excel | provisional | 0 (0) | n/a | — | — | — | Tier B file-engine reads and writes work without Office installed; documents are reparsed to verify. |
 | `csv_write` | office | office.excel | provisional | 0 (0) | n/a | — | — | — | Tier B file-engine reads and writes work without Office installed; documents are reparsed to verify. |
 | `doc_info` | office | filesystem.read | provisional | 0 (0) | n/a | — | — | — | Tier B file-engine reads and writes work without Office installed; documents are reparsed to verify. |
@@ -76,6 +82,8 @@ This is the **declared surface** of the product, across every platform the tools
 | `input_scroll` | input | input.mouse | provisional | 0 (0) | n/a | — | — | — | Wayland sessions may refuse synthetic input; the driver says so instead of guessing. |
 | `input_state` | input | input.mouse | provisional | 0 (0) | n/a | — | — | — | Wayland sessions may refuse synthetic input; the driver says so instead of guessing. |
 | `input_type` | input | input.type | provisional | 0 (0) | n/a | — | — | — | Wayland sessions may refuse synthetic input; the driver says so instead of guessing. |
+| `lessons_note` | schedule | memory.admin | provisional | 0 (0) | n/a | — | — | — | A run missed past its grace window is skipped with a reason, and GUI work is deferred while the session is locked. |
+| `lessons_recall` | schedule | memory.admin | provisional | 0 (0) | n/a | — | — | — | A run missed past its grace window is skipped with a reason, and GUI work is deferred while the session is locked. |
 | `memory_board` | orchestration | memory.admin | provisional | 0 (0) | n/a | — | — | — | Fleet actions are permission-scoped; model reassignment is treated as irreversible. |
 | `memory_recall` | orchestration | memory.admin | provisional | 0 (0) | n/a | — | — | — | Fleet actions are permission-scoped; model reassignment is treated as irreversible. |
 | `memory_remember` | orchestration | memory.admin | provisional | 0 (0) | n/a | — | — | — | Fleet actions are permission-scoped; model reassignment is treated as irreversible. |
@@ -91,11 +99,23 @@ This is the **declared surface** of the product, across every platform the tools
 | `office_word` | office | office.word | provisional | 0 (0) | n/a | — | — | — | Tier B file-engine reads and writes work without Office installed; documents are reparsed to verify. |
 | `pptx_read` | office | office.powerpoint | provisional | 0 (0) | n/a | — | — | — | Tier B file-engine reads and writes work without Office installed; documents are reparsed to verify. |
 | `pptx_write` | office | office.powerpoint | provisional | 0 (0) | n/a | — | — | — | Tier B file-engine reads and writes work without Office installed; documents are reparsed to verify. |
+| `presence_decide` | presence | presence.decide | provisional | 0 (0) | n/a | — | — | — | Camera evidence is absent without consent, so the decision falls back to voice-only and says so. |
+| `presence_observe` | presence | presence.read | provisional | 0 (0) | n/a | — | — | — | Camera evidence is absent without consent, so the decision falls back to voice-only and says so. |
+| `presence_report` | presence | presence.read | provisional | 0 (0) | n/a | — | — | — | Camera evidence is absent without consent, so the decision falls back to voice-only and says so. |
 | `proc_kill` | shell | process.kill | provisional | 0 (0) | n/a | — | — | — | Command risk is classified before execution; L3 commands need the owner. |
 | `proc_list` | shell | process.list | provisional | 0 (0) | n/a | — | — | — | Command risk is classified before execution; L3 commands need the owner. |
 | `proc_run` | shell | shell.exec | provisional | 0 (0) | n/a | — | — | — | Command risk is classified before execution; L3 commands need the owner. |
 | `proc_which` | shell | process.list | provisional | 0 (0) | n/a | — | — | — | Command risk is classified before execution; L3 commands need the owner. |
+| `speaker_analyse` | voice | voice.identify | provisional | 0 (0) | n/a | — | — | — | Genders are pitch heuristics and can report unknown; overlapping speech is flagged, not separated. |
+| `speaker_enroll` | voice | voice.enroll | provisional | 0 (0) | n/a | — | — | — | Genders are pitch heuristics and can report unknown; overlapping speech is flagged, not separated. |
+| `speaker_forget` | voice | voice.enroll | provisional | 0 (0) | n/a | — | — | — | Genders are pitch heuristics and can report unknown; overlapping speech is flagged, not separated. |
+| `speaker_list` | voice | voice.identify | provisional | 0 (0) | n/a | — | — | — | Genders are pitch heuristics and can report unknown; overlapping speech is flagged, not separated. |
+| `speaker_verify` | voice | voice.identify | provisional | 0 (0) | n/a | — | — | — | Genders are pitch heuristics and can report unknown; overlapping speech is flagged, not separated. |
+| `task_cancel` | schedule | task.schedule | provisional | 0 (0) | n/a | — | — | — | A run missed past its grace window is skipped with a reason, and GUI work is deferred while the session is locked. |
 | `task_list` | orchestration | agent.control | provisional | 0 (0) | n/a | — | — | — | Fleet actions are permission-scoped; model reassignment is treated as irreversible. |
+| `task_run_due` | schedule | task.schedule | provisional | 0 (0) | n/a | — | — | — | A run missed past its grace window is skipped with a reason, and GUI work is deferred while the session is locked. |
+| `task_schedule` | schedule | task.schedule | provisional | 0 (0) | n/a | — | — | — | A run missed past its grace window is skipped with a reason, and GUI work is deferred while the session is locked. |
+| `task_schedules` | schedule | task.schedule | provisional | 0 (0) | n/a | — | — | — | A run missed past its grace window is skipped with a reason, and GUI work is deferred while the session is locked. |
 | `term_close` | shell | shell.exec | provisional | 0 (0) | n/a | — | — | — | Command risk is classified before execution; L3 commands need the owner. |
 | `term_interrupt` | shell | shell.exec | provisional | 0 (0) | n/a | — | — | — | Command risk is classified before execution; L3 commands need the owner. |
 | `term_list` | shell | process.list | provisional | 0 (0) | n/a | — | — | — | Command risk is classified before execution; L3 commands need the owner. |

@@ -64,10 +64,14 @@ class VoiceSession:
         on_utterance: Callable[[str], Any] | None = None,
         sample_rate: int = 16_000,
         frame_ms: int = 30,
+        on_audio: Callable[[bytes, int], Any] | None = None,
     ):
         self.config = config
         self.bus = bus
         self.on_utterance = on_utterance
+        #: Called with the raw PCM of each finished utterance. The presence layer uses it to
+        #: find out *who* spoke; a second microphone poller would fight this one for the device.
+        self.on_audio = on_audio
         self.sample_rate = sample_rate
         self.frame_ms = frame_ms
         self.state = VoiceState(enabled=bool(getattr(config, "enabled", True)))
@@ -303,6 +307,13 @@ class VoiceSession:
         audio = b"".join(frames)
         if not audio:
             return {"text": "", "reason": "no audio captured"}
+        if self.on_audio is not None:
+            # Analyse the same buffer that is about to be transcribed: this is the only place
+            # where the voice is still available as audio rather than words.
+            try:
+                self.on_audio(audio, self.sample_rate)
+            except Exception as exc:  # noqa: BLE001 - identification must never break listening
+                self.state.errors.append(f"speaker analysis failed: {exc}")
         text = self._transcribe(audio)
         self.state.last_transcript = text
         self.bus.emit(VOICE_TRANSCRIPT, source="voice", text=text, role="user", final=True)

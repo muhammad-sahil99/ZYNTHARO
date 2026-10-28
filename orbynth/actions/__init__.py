@@ -23,7 +23,9 @@ from . import (
     office,
     office_files,
     orchestration,
+    presence,
     registry as registry_module,
+    schedule,
     shell,
     terminal,
     vision,
@@ -58,6 +60,8 @@ DRIVER_MODULES = (
     whatsapp,
     orchestration,
     fleet,
+    presence,
+    schedule,
 )
 
 

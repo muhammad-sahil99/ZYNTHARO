@@ -68,6 +68,13 @@ CAPABILITIES: tuple[str, ...] = (
     "whatsapp.chat",
     "whatsapp.media",
     "whatsapp.call",
+    "voice.identify",
+    "voice.enroll",
+    "camera.view",
+    "camera.enroll",
+    "presence.read",
+    "presence.decide",
+    "task.schedule",
     "plugin.install",
     "plugin.author",
     "plugin.uninstall",
@@ -310,7 +317,9 @@ class SafetyConfig:
         ]
     )
     audit_keep_days: int = 90
-    max_parallel_agents: int = 8
+    # Two active workers is the safe default for a desktop product. The governor can reduce
+    # this further under pressure; owners who have measured spare capacity can raise it.
+    max_parallel_agents: int = 2
     allow_network: bool = True
     allowed_fs_roots: list[str] = field(default_factory=list)  # empty = whole user profile
 
