@@ -130,6 +130,36 @@
         sources: [{ name: "documents", kind: "files", root: "C:/Users/Owner/Documents", enabled: 1, opt_in: 0 }],
         capabilities: { lexical: true, semantic: false, ocr: true, pdf: true, file_watch: false }
       },
+      connectors: {
+        attached: true,
+        total: 4, ready: 2, needs_setup: 1,
+        rows: [
+          { name: "mail", title: "Mailbox (IMAP/SMTP)", category: "mail", state: "ready", detail: "Gmail / Google Workspace as owner@example.com", auth: "app_password", account: "owner@example.com", verified_at: now() - 86400, operations: 7, needs: "The mailbox address and an app password from the provider's security settings.", where: "Your mail provider's security page (see the provider note in the app).", docs: "https://support.google.com/accounts/answer/185833" },
+          { name: "slack", title: "Slack", category: "chat", state: "ready", detail: "Slack; credential verified against the service", auth: "api_token", account: "acme", verified_at: now() - 3600, operations: 7, needs: "A Slack app in your workspace with a bot token (xoxb-...) and the scopes you want to grant.", where: "api.slack.com/apps → create app → OAuth & Permissions → install → copy the Bot User OAuth Token.", docs: "https://api.slack.com/authentication/token-types" },
+          { name: "google", title: "Google (Gmail, Drive, Calendar, Sheets, Tasks, Contacts)", category: "mail", state: "needs_setup", detail: "Google is not connected. You need an OAuth client id (Desktop app type) from Google Cloud, then consent once.", auth: "oauth2", account: "", verified_at: 0, operations: 14, needs: "A Google OAuth client id (Desktop app type), created once in Google Cloud, plus consent for the scopes you want.", where: "console.cloud.google.com → APIs & Services → Credentials → Create OAuth client ID → Desktop app.", docs: "https://developers.google.com/identity/protocols/oauth2/native-app" },
+          { name: "github", title: "GitHub", category: "code", state: "configured", detail: "GitHub credential stored; run verify to prove it works", auth: "api_token", account: "", verified_at: 0, operations: 7, needs: "A personal access token with the scopes you want to grant.", where: "github.com/settings/tokens → Generate new token (classic) → copy it.", docs: "https://docs.github.com/en/rest" },
+        ],
+        unavailable: {
+          instagram: "Meta requires an Instagram Business account, a reviewed Meta app and the instagram_manage_messages permission. Until that review is granted, no desktop product can read a customer's DMs.",
+          linkedin: "LinkedIn does not license direct-message automation to third-party software at all.",
+        },
+        mail_providers: [
+          { key: "gmail", title: "Gmail / Google Workspace", imap: "imap.gmail.com:993", smtp: "smtp.gmail.com:587", note: "Create an App Password at myaccount.google.com → Security.", supported_here: true },
+          { key: "outlook", title: "Outlook / Microsoft 365", imap: "", smtp: "", note: "Microsoft disabled password sign-in; use the Microsoft 365 connector.", supported_here: false },
+        ],
+        vault: { path: "C:/Users/Owner/AppData/Roaming/ORBYNTH/connectors.vault.json", at_rest_protected: true, note: "encrypted with Windows DPAPI, bound to this Windows account" },
+        connected: [{ name: "mail", keys: ["address", "password"], account: "owner@example.com" }, { name: "slack", keys: ["token"], account: "acme" }],
+        signin_profiles: {
+          google: [
+            { key: "mail_read", label: "Read mail", scopes: ["openid", "email", "https://www.googleapis.com/auth/gmail.readonly"], note: "Reading Gmail is a restricted scope.", restricted: true },
+            { key: "drive", label: "Drive files", scopes: ["openid", "email", "https://www.googleapis.com/auth/drive.file"], note: "", restricted: false },
+          ],
+          microsoft: [
+            { key: "desk", label: "Mail, calendar, files, contacts and tasks", scopes: ["offline_access", "User.Read", "Mail.Send"], note: "Mail.Send is included; the owner approves each send.", restricted: false },
+          ],
+        },
+        signin: [],
+      },
       transcript: [
         { role: "user", text: "Pull the invoices off the supplier portal and file them by month.", ts: now() - 240 },
         { role: "assistant", text: "Foreman-9f21 is on it: downloading 41 invoices in parallel while Scrivener reconciles amounts.", ts: now() - 232 },
