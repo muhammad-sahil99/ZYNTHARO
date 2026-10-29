@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS inbound (
     chat TEXT NOT NULL,
     message_id TEXT NOT NULL,
     sender TEXT DEFAULT '',
+    subject TEXT DEFAULT '',
     text TEXT NOT NULL,
     ts REAL DEFAULT 0,
     collected_at REAL DEFAULT 0,
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS drafts (
     inbound_id INTEGER NOT NULL UNIQUE,
     channel TEXT NOT NULL,
     chat TEXT NOT NULL,
+    subject TEXT DEFAULT '',
     reply TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending_approval',
     created_at REAL DEFAULT 0,
@@ -56,10 +58,13 @@ class ReplyDesk(Workflow):
     name = "reply_desk"
     title = "Reply desk"
     description = (
-        "Collect customer messages from a connected channel and prepare replies. Nothing is sent "
-        "until you approve it; every draft is stored and traceable."
+        "Collect customer messages from a connected channel or mailbox and prepare replies. "
+        "Nothing is sent until you approve it; every draft is stored and traceable."
     )
-    needs = "A connected channel (Telegram or WhatsApp) and a reply style the drafter can follow."
+    needs = (
+        "A connected channel (Telegram, WhatsApp) or a connected mailbox, and a reply style the "
+        "drafter can follow."
+    )
 
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
@@ -67,6 +72,21 @@ class ReplyDesk(Workflow):
         self._lock = threading.Lock()
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Add columns introduced after a desk was first created.
+
+        A customer already running the reply desk has drafts in this file, so the store is
+        upgraded in place instead of being recreated. ``subject`` was added when mail became a
+        source: without it a reply cannot thread, and losing a pending draft to gain a column
+        would be a bad trade.
+        """
+        for table in ("inbound", "drafts"):
+            columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if "subject" not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN subject TEXT DEFAULT ''")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=10.0)
@@ -83,13 +103,15 @@ class ReplyDesk(Workflow):
                 if not str(getattr(message, "text", "")).strip():
                     continue
                 cursor = conn.execute(
-                    "INSERT OR IGNORE INTO inbound (channel, chat, message_id, sender, text, ts, collected_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT OR IGNORE INTO inbound "
+                    "(channel, chat, message_id, sender, subject, text, ts, collected_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         channel.name,
                         getattr(message, "chat", chat),
                         getattr(message, "message_id", ""),
                         getattr(message, "sender", ""),
+                        str(getattr(message, "subject", "") or ""),
                         message.text,
                         float(getattr(message, "ts", 0) or 0),
                         time.time(),
@@ -126,18 +148,35 @@ class ReplyDesk(Workflow):
                 continue
             with self._lock, self._connect() as conn:
                 cursor = conn.execute(
-                    "INSERT INTO drafts (inbound_id, channel, chat, reply, status, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (row["id"], row["channel"], row["chat"], reply, PENDING, time.time()),
+                    "INSERT INTO drafts (inbound_id, channel, chat, subject, reply, status, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        row["id"],
+                        row["channel"],
+                        row["chat"],
+                        str(row.get("subject", "") or ""),
+                        reply,
+                        PENDING,
+                        time.time(),
+                    ),
                 )
-                created.append({"draft_id": cursor.lastrowid, "channel": row["channel"], "chat": row["chat"], "reply": reply})
+                created.append(
+                    {
+                        "draft_id": cursor.lastrowid,
+                        "channel": row["channel"],
+                        "chat": row["chat"],
+                        "subject": str(row.get("subject", "") or ""),
+                        "reply": reply,
+                    }
+                )
         return created
 
     # -- the owner's decision --------------------------------------------------------
     def pending(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT d.*, i.text AS inbound_text, i.sender AS sender FROM drafts d "
+                "SELECT d.*, i.text AS inbound_text, i.sender AS sender, "
+                "COALESCE(NULLIF(d.subject, ''), i.subject) AS subject FROM drafts d "
                 "JOIN inbound i ON i.id = d.inbound_id WHERE d.status = ? ORDER BY d.id LIMIT ?",
                 (PENDING, max(1, int(limit))),
             )
@@ -157,7 +196,12 @@ class ReplyDesk(Workflow):
                 "the reply to the wrong place"
             )
         try:
-            delivered = channel.send(row["chat"], row["reply"])
+            # A mailbox threads a reply ("Re: <subject>"); a chat platform has no such concept.
+            # The desk asks the source which it is instead of guessing from its name.
+            if hasattr(channel, "send_reply"):
+                delivered = channel.send_reply(dict(row))
+            else:
+                delivered = channel.send(row["chat"], row["reply"])
         except Exception as exc:  # noqa: BLE001 - the failure is stored, not hidden
             with self._lock, self._connect() as conn:
                 conn.execute(
@@ -203,6 +247,16 @@ class ReplyDesk(Workflow):
             result.step("collect", SKIPPED, f"could not read {channel.name}: {exc}")
             return result.finish(PARTIAL, f"no messages collected: {exc}")
         result.step("collect", OK, f"{added} new message(s) from {channel.name}")
+        # A source that could list a message but not read it says so here: "collected 4" while 2
+        # were unreadable is the kind of half-truth this project exists to avoid.
+        skipped = list(getattr(channel, "skipped", []) or [])
+        if skipped:
+            result.step(
+                "collect.unreadable",
+                SKIPPED,
+                f"{len(skipped)} message(s) could not be read: {skipped[0].get('reason', '')}",
+            )
+            result.problems.append(f"{len(skipped)} unreadable message(s) were not drafted")
         if drafter is None:
             return result.finish(
                 DONE,

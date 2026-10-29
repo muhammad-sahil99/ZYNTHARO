@@ -253,7 +253,7 @@ def build_stack(
         "daily_report": DailyReport(),
         "reply_desk": reply_desk,
     }
-    channel_actions.set_services(channel_actions.ChannelServices(channel_registry, workflow_map, reply_desk))
+    # (wired below, once the connector registry exists: the reply desk reads a mailbox through it)
 
     # Connected accounts (Gmail/Outlook/Drive/Sheets/Slack/Notion/…). Same reasoning as channels:
     # one registry, created here, reachable from the CLI, the HUD and every agent's tools. It is
@@ -263,6 +263,11 @@ def build_stack(
 
     connector_registry = default_connector_registry(str(config.home_path))
     connector_actions.set_services(connector_actions.ConnectorServices(connector_registry))
+    # The channel actions get the connector registry too, so an unconnected mailbox fails with the
+    # connector's own reason rather than a KeyError.
+    channel_actions.set_services(
+        channel_actions.ChannelServices(channel_registry, workflow_map, reply_desk, connector_registry)
+    )
     if start_agents:
         orchestrator.bootstrap_roster()
 
@@ -869,7 +874,21 @@ def cmd_workflows(args: argparse.Namespace) -> int:
             print(f"error: unknown workflow {args.name!r}; known: {', '.join(sorted(stack.workflows))}", file=sys.stderr)
             return 2
         if args.name == "reply_desk":
-            channel = stack.channels.get(params.pop("channel", "telegram"))
+            channel_name = str(params.pop("channel", "telegram"))
+            if channel_name.strip().lower() in {"mail", "mailbox", "email"}:
+                from .workflows.mailbox import source_for
+
+                try:
+                    channel = source_for(
+                        stack.connectors,
+                        folder=str(params.pop("folder", "INBOX")),
+                        unseen_only=bool(params.pop("unseen_only", True)),
+                    )
+                except RuntimeError as exc:
+                    print(f"error: {exc}", file=sys.stderr)
+                    return 2
+            else:
+                channel = stack.channels.get(channel_name)
             result = workflow.run(channel, **params)
         else:
             result = workflow.run(**params)

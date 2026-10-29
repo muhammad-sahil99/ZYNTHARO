@@ -43,6 +43,21 @@ Instagram, Facebook/Messenger, X, LinkedIn, TikTok, Snapchat and Apple Notes are
 `unavailable` with the business gate quoted verbatim, because no amount of code passes a platform
 review. They are not silently missing: `orbynth connectors` prints them with the reason.
 
+### The reply desk on a mailbox
+
+The desk reads a connected mailbox through the connector's own `search` and `read` operations, so
+the same app-password mailbox that works for filing also answers customers. Honest limits:
+
+* **Live acceptance needs a real mailbox.** The adapter, threading, dedupe and approval gate are
+  covered by `tests/test_mailbox_desk.py` against a mailbox faked at its operation boundary; no
+  email has been read from or sent to a real account in this build.
+* **Drafts are written by whoever you pass as the drafter.** The CLI can collect and store messages
+  without one (the result says no reply was prepared); a useful draft comes from the fleet's model
+  with your reply style, and its quality is the model's, not the desk's.
+* **`unseen_only` is the default.** A mailbox that marks messages read elsewhere will therefore
+  contribute nothing; that is deliberate (answering every old email on first run is worse) and is
+  a parameter, not a hidden setting.
+
 ## Channels: what is offered and what is refused
 
 * **Offered:** Telegram (official Bot API — a free bot token, no phone or review) and WhatsApp

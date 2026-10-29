@@ -41,6 +41,10 @@ class ChannelMessage:
     message_id: str = ""
     sender: str = ""
     ts: float = field(default_factory=time.time)
+    #: Mail has a subject line and a chat message does not. Carried here so a reply can be threaded
+    #: ("Re: <subject>") instead of arriving as an unrelated new email — a reply that starts a new
+    #: thread is worse than no reply at all in a shared inbox.
+    subject: str = ""
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)

@@ -23,6 +23,9 @@ class ChannelServices:
     channels: Any
     workflows: dict[str, Any]
     reply_desk: Any = None
+    #: Needed so the reply desk can read a mailbox, which is not a chat channel but answers the
+    #: same two questions (what came in, where does the reply go).
+    connectors: Any = None
 
 
 _SERVICES: ChannelServices | None = None
@@ -49,6 +52,28 @@ def _channel(name: str) -> Any:
         return _svc().channels.get(name)
     except KeyError as exc:
         raise ActionFailed(str(exc)) from exc
+
+
+#: Names that mean "the connected mailbox" wherever a workflow expects a channel.
+MAIL_NAMES = {"mail", "mailbox", "email"}
+
+
+def _delivery(name: str) -> Any:
+    """The thing a reply is delivered through: a chat channel, or the connected mailbox."""
+    key = str(name).strip().lower()
+    if key in MAIL_NAMES:
+        services = _svc()
+        if services.connectors is None:
+            raise ActionFailed(
+                "this stack has no connector registry, so there is no mailbox to read or reply from"
+            )
+        from ..workflows.mailbox import source_for
+
+        try:
+            return source_for(services.connectors)
+        except RuntimeError as exc:  # the connector's own reason, e.g. "not connected yet"
+            raise ActionFailed(str(exc)) from exc
+    return _channel(name)
 
 
 @action(
@@ -147,9 +172,11 @@ def workflow_run(ctx: ActionContext, name: str, params: dict[str, Any] | None = 
         from ..workflows.base import WorkflowError
 
         channel_name = str((params or {}).get("channel", ""))
-        channel = _channel(channel_name) if channel_name else None
+        channel = _delivery(channel_name) if channel_name else None
         if channel is None:
-            raise ActionFailed("reply_desk needs a 'channel' parameter naming a connected platform")
+            raise ActionFailed(
+                "reply_desk needs a 'channel' parameter naming a connected platform or 'mail'"
+            )
         try:
             result = services.reply_desk.run(channel, chat=(params or {}).get("chat", ""), limit=int((params or {}).get("limit", 20)))
         except WorkflowError as exc:
@@ -204,7 +231,7 @@ def reply_approve(ctx: ActionContext, draft_id: int) -> Any:
     from ..workflows.base import WorkflowError
 
     try:
-        return desk.approve(int(draft_id), _channel(str(row["channel"])))
+        return desk.approve(int(draft_id), _delivery(str(row["channel"])))
     except WorkflowError as exc:
         raise ActionFailed(str(exc)) from exc
 

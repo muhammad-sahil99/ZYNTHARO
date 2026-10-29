@@ -167,7 +167,17 @@ that sends — mail, a message, a post — still waits for you.
   ledger. Re-running it is free: identical content is skipped by hash.
 - **Reply desk** collects customer messages and prepares replies; **nothing is sent until the
   owner approves it** (`orbynth` action `reply_approve`, or the app). Drafts live in SQLite, so a
-  crash loses no work and no message is answered twice.
+  crash loses no work and no message is answered twice. It reads a mailbox as easily as a chat:
+
+  ```bash
+  orbynth workflows run --name reply_desk \
+    --params '{"channel":"mail","folder":"INBOX","unseen_only":true,"limit":20}'
+  ```
+
+  Each mail draft keeps the original subject, so an approved reply threads as `Re: …` in the
+  customer's inbox instead of starting a new conversation; message ids are namespaced by folder, so
+  the same IMAP number in two folders cannot produce a double answer; and a message that could not
+  be read is reported in the result rather than dropped.
 - **Recurring report** writes a Word summary and an Excel breakdown from the ledger and reads both
   back to prove the totals.
 

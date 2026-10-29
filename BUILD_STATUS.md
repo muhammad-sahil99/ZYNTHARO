@@ -57,6 +57,8 @@ Read the three markers literally:
 | MCP client/server, local REST/WS API, SDKs | unbuilt | spec 15 |
 | Workflows: invoice intake (file, dedupe, xlsx ledger, read-back) | done (file work is OS-independent) | `tests/test_workflows.py`, gate `tests_core` |
 | Workflows: reply desk (durable outbox, mandatory approval, wrong-platform refusal) | done | `tests/test_workflows.py` |
+| Workflows: reply desk on a **connected mailbox** (search+read through the mail connector, folder-namespaced dedupe, threaded `Re:` replies, unreadable messages reported) | done as code; needs the customer's mailbox connected to run live | `orbynth/workflows/mailbox.py`, `orbynth/workflows/reply_desk.py`, `tests/test_mailbox_desk.py` |
+| Reply desk store upgrade (adds `subject` in place; existing pending drafts kept) | done | `orbynth/workflows/reply_desk.py` (`_migrate`), `tests/test_mailbox_desk.py` |
 | Workflows: recurring report (docx + xlsx, totals read back) | done | `tests/test_workflows.py` |
 | Channels: Telegram Bot API (send, poll, offset, platform errors) | partial — transport verified against a real local Bot API server; a live bot needs the owner's token | `tests/test_workflows.py` (`TelegramChannelTests`) |
 | Channels: WhatsApp sidecar adapter | partial | adapter refuses when unpaired; live pairing acceptance pending |
