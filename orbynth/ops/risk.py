@@ -33,6 +33,9 @@ IRREVERSIBLE_CAPABILITIES: frozenset[str] = frozenset(
         "whatsapp.call",
         # A delivered message cannot be recalled: the customer has already read it.
         "channel.send",
+        # The same is true of an email sent from a connected account, and a mistaken one lands in
+        # a customer's inbox with the business's name on it.
+        "connector.send",
         "plugin.install",
         "plugin.uninstall",
         # fleet control: moving the model under a running agent loses its context, and a

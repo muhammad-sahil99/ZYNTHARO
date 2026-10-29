@@ -153,6 +153,8 @@ orbynth workflows run --name invoice_intake \
 orbynth workflows run --name daily_report \
   --params '{"ledger":"~/Invoices/ledger.xlsx","out_dir":"~/Reports"}'
 orbynth channels            # which platform can actually be used here, and why the others cannot
+orbynth connectors          # every outside account, its state, and its operations
+orbynth connectors verify --connector slack
 ```
 
 - **Invoice intake** files every new invoice by year and quarter and records it once in an Excel

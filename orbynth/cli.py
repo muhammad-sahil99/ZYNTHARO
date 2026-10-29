@@ -73,6 +73,8 @@ class Stack:
     #: The sellable surface: connected platforms and the three business workflows.
     channels: Any = None
     workflows: dict[str, Any] = field(default_factory=dict)
+    #: The customer's own outside accounts (mail, Drive, calendar, chat, CRM, code, payments).
+    connectors: Any = None
     reply_desk: Any = None
 
     def shutdown(self) -> None:
@@ -252,6 +254,15 @@ def build_stack(
         "reply_desk": reply_desk,
     }
     channel_actions.set_services(channel_actions.ChannelServices(channel_registry, workflow_map, reply_desk))
+
+    # Connected accounts (Gmail/Outlook/Drive/Sheets/Slack/Notion/…). Same reasoning as channels:
+    # one registry, created here, reachable from the CLI, the HUD and every agent's tools. It is
+    # built from the local vault on each call, so connecting an account needs no restart.
+    from .actions import connectors as connector_actions
+    from .connectors import default_registry as default_connector_registry
+
+    connector_registry = default_connector_registry(str(config.home_path))
+    connector_actions.set_services(connector_actions.ConnectorServices(connector_registry))
     if start_agents:
         orchestrator.bootstrap_roster()
 
@@ -334,6 +345,7 @@ def build_stack(
         channels=channel_registry,
         workflows=workflow_map,
         reply_desk=reply_desk,
+        connectors=connector_registry,
     )
 
     # Presence: who is talking, who is in the room, and whether speaking aloud is appropriate.
@@ -775,6 +787,59 @@ def cmd_channels(args: argparse.Namespace) -> int:
         else:
             for row in payload["channels"]:
                 print(f"{row['state']:<12} {row['name']:<10} {row['detail']}")
+        return 0
+    finally:
+        stack.shutdown()
+
+
+def cmd_connectors(args: argparse.Namespace) -> int:
+    """The customer's outside accounts: what is connected, what is missing, what cannot be reached."""
+    config = load_config(args.config)
+    stack = build_stack(config, start_agents=False, load_plugins=False)
+    try:
+        registry = stack.connectors
+        if args.action == "verify":
+            status = registry.verify(args.connector)
+            print(json.dumps(status.to_json(), indent=2))
+            return 0 if status.state == "ready" else 1
+        if args.action == "disconnect":
+            removed = registry.disconnect(args.connector)
+            print(json.dumps({"connector": args.connector, "disconnected": removed}, indent=2))
+            return 0 if removed else 1
+        if args.action == "connect":
+            try:
+                values = json.loads(args.values or "{}")
+            except ValueError as exc:
+                print(f"error: --values must be a JSON object: {exc}", file=sys.stderr)
+                return 2
+            if not isinstance(values, dict) or not values:
+                print("error: --values must be a non-empty JSON object of that connector's fields", file=sys.stderr)
+                return 2
+            meta = json.loads(args.meta) if args.meta else {}
+            status = registry.connect(args.connector, {k: str(v) for k, v in values.items()}, meta)
+            print(json.dumps(status.to_json(), indent=2))
+            return 0 if status.state == "ready" else 1
+        if args.action == "call":
+            try:
+                payload = json.loads(args.args or "{}")
+            except ValueError as exc:
+                print(f"error: --args must be a JSON object: {exc}", file=sys.stderr)
+                return 2
+            print(json.dumps(registry.call(args.connector, args.operation, **payload), indent=2))
+            return 0
+        catalogue = registry.catalogue()
+        if args.json:
+            print(json.dumps(catalogue, indent=2))
+            return 0
+        for category, rows in catalogue["categories"].items():
+            print(f"\n{category}")
+            for row in rows:
+                print(f"  {row['state']:<12} {row['name']:<12} {row['operations']:>2} ops  {row['detail']}")
+        if catalogue["unavailable"]:
+            print("\nnot available in this build")
+            for name, gate in catalogue["unavailable"].items():
+                print(f"  {name}: {gate}")
+        print(f"\nvault: {catalogue['vault']['path']} — {catalogue['vault']['note']}")
         return 0
     finally:
         stack.shutdown()
@@ -1295,6 +1360,20 @@ def build_parser() -> argparse.ArgumentParser:
     channels.add_argument("--limit", type=int, default=20)
     channels.add_argument("--json", action="store_true")
     channels.set_defaults(func=cmd_channels)
+
+    connectors = sub.add_parser(
+        "connectors", help="connected accounts (mail, Drive, calendar, chat, CRM, code, payments)"
+    )
+    connectors.add_argument(
+        "action", nargs="?", default="list", choices=["list", "connect", "verify", "disconnect", "call"]
+    )
+    connectors.add_argument("--connector", default="")
+    connectors.add_argument("--values", default="", help="JSON object of that connector's fields")
+    connectors.add_argument("--meta", default="", help="JSON object of account labels")
+    connectors.add_argument("--operation", default="")
+    connectors.add_argument("--args", default="", help="JSON object of the operation's arguments")
+    connectors.add_argument("--json", action="store_true")
+    connectors.set_defaults(func=cmd_connectors)
 
     workflows = sub.add_parser("workflows", help="the business workflows this build ships")
     workflows.add_argument("action", nargs="?", default="list", choices=["list", "run"])

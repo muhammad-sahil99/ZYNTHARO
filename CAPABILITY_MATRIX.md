@@ -10,7 +10,7 @@ This is the **declared surface** of the product, across every platform the tools
 | `provisional` | implemented and usable here, but not yet proven on a real app | no — every receipt from it is labelled UNVERIFIED |
 | `unavailable` | no driver here, or the wrong platform | no — hidden from agents, shown to the user as "not available on this machine" |
 
-**187 declared tool(s)** in 18 group(s): 0 green, 155 provisional, 32 unavailable on every supported platform. 0 tool(s) have recorded real runs.
+**195 declared tool(s)** in 19 group(s): 0 green, 155 provisional, 40 unavailable on every supported platform. 0 tool(s) have recorded real runs.
 
 ## Declared tools
 
@@ -187,6 +187,14 @@ Hidden from every agent until the driver is present and the platform matches (sp
 | `channel_inbox` | channels | the 'channels' group has no driver profile, so this cannot be claimed | — |
 | `channel_send` | channels | the 'channels' group has no driver profile, so this cannot be claimed | — |
 | `channel_status` | channels | the 'channels' group has no driver profile, so this cannot be claimed | — |
+| `connector_connect` | connectors | the 'connectors' group has no driver profile, so this cannot be claimed | — |
+| `connector_disconnect` | connectors | the 'connectors' group has no driver profile, so this cannot be claimed | — |
+| `connector_list` | connectors | the 'connectors' group has no driver profile, so this cannot be claimed | — |
+| `connector_operations` | connectors | the 'connectors' group has no driver profile, so this cannot be claimed | — |
+| `connector_read` | connectors | the 'connectors' group has no driver profile, so this cannot be claimed | — |
+| `connector_send` | connectors | the 'connectors' group has no driver profile, so this cannot be claimed | — |
+| `connector_verify` | connectors | the 'connectors' group has no driver profile, so this cannot be claimed | — |
+| `connector_write` | connectors | the 'connectors' group has no driver profile, so this cannot be claimed | — |
 | `hw_alerts` | hardware | the 'hardware' group has no driver profile, so this cannot be claimed | — |
 | `hw_explain` | hardware | the 'hardware' group has no driver profile, so this cannot be claimed | — |
 | `hw_history` | hardware | the 'hardware' group has no driver profile, so this cannot be claimed | — |

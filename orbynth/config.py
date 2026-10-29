@@ -70,6 +70,13 @@ CAPABILITIES: tuple[str, ...] = (
     "channel.send",
     # A packaged business process (invoice intake, reply desk, recurring report).
     "workflow.run",
+    # A customer's outside account: mail, drives, calendar, chat, CRM, code, payments.
+    # ``connector.send`` is separate from ``connector.write`` because a delivered email is
+    # irreversible in a way that editing a spreadsheet cell is not.
+    "connector.read",
+    "connector.write",
+    "connector.send",
+    "connector.admin",
     "whatsapp.pair",
     "whatsapp.chat",
     "whatsapp.media",

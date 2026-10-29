@@ -16,6 +16,7 @@ from ..llm.providers import ToolSpec
 from . import (
     browser,
     channels,
+    connectors,
     filesystem,
     fleet,
     hardware,
@@ -48,6 +49,7 @@ from .registry import (
 DRIVER_MODULES = (
     registry_module,
     channels,
+    connectors,
     filesystem,
     shell,
     terminal,
@@ -142,6 +144,7 @@ __all__ = [
     "build_registry",
     "driver_report",
     "orchestration",
+    "connectors",
     "fleet",
     "filesystem",
     "shell",

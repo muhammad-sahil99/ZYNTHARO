@@ -61,6 +61,12 @@ Read the three markers literally:
 | Channels: Telegram Bot API (send, poll, offset, platform errors) | partial — transport verified against a real local Bot API server; a live bot needs the owner's token | `tests/test_workflows.py` (`TelegramChannelTests`) |
 | Channels: WhatsApp sidecar adapter | partial | adapter refuses when unpaired; live pairing acceptance pending |
 | Channels: Instagram/Messenger/X/LinkedIn/TikTok/Snapchat | declared unavailable with the exact business gate | `orbynth/channels/registry.py`, `tests/test_workflows.py` |
+| Connectors: credential vault (DPAPI on Windows, 0600 elsewhere, values never logged) | done | `orbynth/connectors/store.py`, `tests/test_connectors.py` (`VaultTests`) |
+| Connectors: mail over IMAP/SMTP (folders, search, read, attachments, send, mark, move) | done as code; needs the customer's app password to run live | `orbynth/connectors/mail.py`, `tests/test_connectors.py` (`MailConnectorTests`) |
+| Connectors: Google (14 ops: Gmail, Drive, Calendar, Sheets, Tasks, Contacts) | partial — OAuth PKCE loopback + refresh implemented; needs a customer OAuth client to exercise live | `orbynth/connectors/google.py` |
+| Connectors: Microsoft 365 (14 ops: Outlook, Calendar, OneDrive, Excel, Teams) | partial — device-code flow implemented; needs a tenant app registration to exercise live | `orbynth/connectors/microsoft.py` |
+| Connectors: token-based SaaS (Slack, GitHub, Notion, Airtable, Trello, Asana, Jira, HubSpot, Stripe, Dropbox, Zoom, Salesforce, Linear, Discord) | done as code, 95 declared operations; request shape asserted against an injected transport | `orbynth/connectors/saas.py`, `tests/test_connectors.py` (`SaasConnectorTests`) |
+| Connectors: capability split (read / write / send) so a read agent cannot send mail | done | `orbynth/actions/connectors.py`, `tests/test_connectors.py` (`GateTests`) |
 | Windows application payload builder (embedded Python/HUD/sidecar/browser manifest) | partial | `tools/build_windows_bundle.py`, `tests/test_packaging.py`; requires Windows release inputs |
 | Signed Windows installer definition and hash-validated input gate | partial | `installer/ORBYNTH.iss`, `tools/build_windows_installer.py`, `tests/test_packaging.py`; needs a Windows signing environment and clean-VM acceptance |
 

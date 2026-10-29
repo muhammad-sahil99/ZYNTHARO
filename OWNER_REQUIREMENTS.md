@@ -25,6 +25,8 @@ the HUD instead of pretending.
 |---|---|---|
 | Provider API keys (Gemini/OpenAI/Anthropic/…) | real model calls | the app runs against the offline `echo` provider only |
 | A Telegram bot token (`ORBYNTH_TELEGRAM_TOKEN`) | the reply desk over Telegram | the channel reports `needs_setup` with that instruction; nothing is sent |
+| One live account per connector you intend to sell (a Gmail/Workspace mailbox with an app password, a Microsoft 365 tenant app registration, a Slack workspace, a GitHub org, one CRM) | proving each connector against the real service | connectors stay `configured`/`needs_setup`; their request shapes are tested, but no live acceptance has been run |
+| A Google OAuth client (Desktop app type) in a test project | the Google connector's consent, refresh and quota behaviour | the Google connector stays `needs_setup` with the exact Cloud Console steps |
 | A WhatsApp account to pair, plus a second phone to test with | reply desk over WhatsApp, media and call acceptance | the channel stays unpaired and refuses instead of queueing messages |
 | Meta business account + reviewed app (only if Instagram/Messenger is ever sold) | DM access | those platforms stay declared unavailable, with the gate shown to the customer |
 | Microsoft 365 test tenant + Office licences | Office Tier A acceptance, Outlook/Word/Excel/Excel-macro tests | Tier A checks are marked *blocked*, not passed; Tier B (file-based) still works |

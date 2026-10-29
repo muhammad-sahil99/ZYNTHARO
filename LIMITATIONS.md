@@ -4,6 +4,29 @@ Nothing in this file is a plan in disguise. Each entry says what is missing, wha
 when they hit it, and what would close it. A limitation discovered later that is not written here
 is a bug in this file.
 
+## Connected accounts: what works on day one, and what needs the customer
+
+Every connector stores its credential in a local vault (Windows DPAPI; a 0600 file elsewhere) and
+proves it against the real service before it is marked `ready`. Nothing here ships a client secret:
+a desktop app is a public client, so the credential is always the customer's own.
+
+| connector | works after this one step | the honest limit |
+|---|---|---|
+| Mailbox (IMAP/SMTP) | an app password from the provider | Outlook/Microsoft 365 is **refused with the reason**: Microsoft disabled password sign-in, so the Graph connector is the only route |
+| Google (Gmail, Drive, Calendar, Sheets, Tasks, Contacts) | an OAuth client id the customer creates (Desktop app type, ~5 min) | reading mail is a Google *restricted* scope: a publicly distributed app needs Google verification (and a security assessment if mail content leaves the device). ORBYNTH processes mail locally for that reason. Tests run against an injected transport, not a live Google account |
+| Microsoft 365 (Outlook, Calendar, OneDrive, Teams, Excel) | a free app registration in the customer's tenant + device-code sign-in | Teams and organisational mailboxes may need tenant admin consent; Graph throttling is per-resource and surfaces as a wait-and-retry message |
+| Slack, GitHub, Notion, Airtable, Trello, Asana, Jira, HubSpot, Stripe, Dropbox, Zoom, Salesforce, Linear, Discord | a token the customer generates in their own account | no app review is needed for a private token, but some scopes (Slack search, Teams channels, Salesforce API) need a paid plan or admin approval — the provider's own error text is shown verbatim |
+
+The connector transport (HTTP, `429`/`Retry-After`, provider error text, URL building) is tested; the
+per-provider calls are tested against an injected transport that asserts the exact method, URL,
+headers and body. **No connector has yet been exercised against a live paid account in this
+build** — that acceptance run needs the customer's own credentials and is listed in
+`OWNER_REQUIREMENTS.md`.
+
+Instagram, Facebook/Messenger, X, LinkedIn, TikTok, Snapchat and Apple Notes are declared
+`unavailable` with the business gate quoted verbatim, because no amount of code passes a platform
+review. They are not silently missing: `orbynth connectors` prints them with the reason.
+
 ## Channels: what is offered and what is refused
 
 * **Offered:** Telegram (official Bot API — a free bot token, no phone or review) and WhatsApp

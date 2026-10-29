@@ -29,6 +29,22 @@ Nothing is sent, deleted, paid, installed or called without the owner's approval
 No Microsoft Office installation is required for any of the three. If Office is installed, the
 generated files open normally in Word and Excel.
 
+## Connected accounts (v1)
+
+The customer's own accounts, connected once, used by every workflow and by the agent:
+
+| account | operations the product ships |
+|---|---|
+| Mailbox (IMAP/SMTP: Gmail, iCloud, Yahoo, Zoho, Fastmail, GMX, Proton Bridge, generic) | list folders, search, read, save attachments, send, mark, move/archive |
+| Google (Gmail, Drive, Calendar, Sheets, Tasks, Contacts) | 14 operations, per-scope consent |
+| Microsoft 365 (Outlook, Calendar, OneDrive, Excel, Teams) | 14 operations through Graph, device-code sign-in |
+| Slack, GitHub, Notion, Airtable, Trello, Asana, Jira, HubSpot, Stripe, Dropbox, Zoom, Salesforce, Linear, Discord | 95 operations total; every endpoint is one the provider documents for token holders |
+
+**The commercial rule that makes this sellable:** connecting is one action by the customer — an app
+password, a token they generate, or a free app registration in their own tenant. There is no vendor
+account in the middle, no per-seat API markup, and no client secret in the installer. Reading and
+writing are separate permissions; sending mail or a message is always the owner's click.
+
 ## Channels: what is offered, and what is refused
 
 A "connect everything" claim is a lie customers discover on day two. The product states the real
