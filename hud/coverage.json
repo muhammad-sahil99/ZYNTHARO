@@ -34,6 +34,10 @@
     "journal.reconciled",
     "journal.undone",
     "lesson.recorded",
+    "mcp.connected",
+    "mcp.failed",
+    "mcp.server_started",
+    "mcp.tool_called",
     "memory.recall",
     "memory.write",
     "model.call",
@@ -110,6 +114,10 @@
     "journal.reconciled",
     "journal.undone",
     "lesson.recorded",
+    "mcp.connected",
+    "mcp.failed",
+    "mcp.server_started",
+    "mcp.tool_called",
     "memory.recall",
     "memory.write",
     "model.call",
@@ -161,5 +169,5 @@
   ],
   "extra_handlers": [],
   "literal_topics": [],
-  "constant_count": 74
+  "constant_count": 78
 }

@@ -1,6 +1,6 @@
 {
-  "generated_at": 1793284414.7971554,
-  "generated_at_iso": "2026-10-29 14:33:34",
+  "generated_at": 1793286376.4721084,
+  "generated_at_iso": "2026-10-29 15:06:16",
   "machine": {
     "platform": "Linux-6.1.102-x86_64-with-glibc2.39",
     "python": "3.12.3"
@@ -56,8 +56,8 @@
       "blocking": true,
       "kind": "ops",
       "status": "pass",
-      "detail": "100 file(s) scanned, 0 banned patterns (0 test-harness hit(s) allowed and listed)",
-      "duration": 0.78,
+      "detail": "106 file(s) scanned, 0 banned patterns (0 test-harness hit(s) allowed and listed)",
+      "duration": 0.73,
       "missing": []
     },
     {
@@ -68,7 +68,7 @@
       "kind": "ops",
       "status": "pass",
       "detail": "exactly-once held (ledger=1 line, replayed=True); reconciled 1 landed / 1 never ran / 1 needs a decision (entry 4); undo plan=1 of 2 action(s) can be reversed; 1 refused as irreversible, 0 have no undo; undo reversed 1 action(s)",
-      "duration": 0.04,
+      "duration": 0.03,
       "missing": []
     },
     {
@@ -78,8 +78,8 @@
       "blocking": true,
       "kind": "command",
       "status": "pass",
-      "detail": "  open(os.path.join(folder, \"f.txt\"), \"w\").write(\"x\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:106: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/zyntharo-work-ur3ibw9m/cfg.ini' mode='r' encoding='UTF-8'>\n  self.assertIn(\"fast\", open(target).read())\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................../workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:45: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/zyntharo-work-akdxlnn1/doomed.txt' mode='w' encoding='UTF-8'>\n  open(target, \"w\").write(\"bye\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n......./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:825: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/zyntharo/actions/whatsapp.py' mode='r' encoding='utf-8'>\n  client = open(os.path.join(self.root(), \"zyntharo\", \"actions\", \"whatsapp.py\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n/workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:826: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:835: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../workspace/chat",
-      "duration": 9.53,
+      "detail": "  open(os.path.join(folder, \"f.txt\"), \"w\").write(\"x\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:106: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/zyntharo-work-0vbckr9_/cfg.ini' mode='r' encoding='UTF-8'>\n  self.assertIn(\"fast\", open(target).read())\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................../workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:45: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/zyntharo-work-4pia9wyz/doomed.txt' mode='w' encoding='UTF-8'>\n  open(target, \"w\").write(\"bye\")\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n......./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:825: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/zyntharo/actions/whatsapp.py' mode='r' encoding='utf-8'>\n  client = open(os.path.join(self.root(), \"zyntharo\", \"actions\", \"whatsapp.py\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n/workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:826: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./workspace/chats/c217f37466d0efaf41f5e709/tests/test_actions.py:835: ResourceWarning: unclosed file <_io.TextIOWrapper name='/workspace/chats/c217f37466d0efaf41f5e709/sidecars/whatsapp/sidecar.js' mode='r' encoding='utf-8'>\n  sidecar = open(os.path.join(self.root(), \"sidecars\", \"whatsapp\", \"sidecar.js\"), encoding=\"utf-8\").read()\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../workspace/chat",
+      "duration": 9.33,
       "missing": []
     },
     {
@@ -89,8 +89,8 @@
       "blocking": true,
       "kind": "command",
       "status": "pass",
-      "detail": "....../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 5708 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................................................/usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 5721 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 5731 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 5734 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..............\n----------------------------------------------------------------------\nRan 73 tests in 3.833s\n\nOK",
-      "duration": 3.98,
+      "detail": "....../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 15476 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n................................................/usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 15483 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..../usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 15501 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n./usr/lib/python3.12/subprocess.py:1127: ResourceWarning: subprocess 15504 is still running\n  _warn(\"subprocess %s is still running\" % self.pid,\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n..............\n----------------------------------------------------------------------\nRan 73 tests in 3.660s\n\nOK",
+      "duration": 3.8,
       "missing": []
     }
   ]

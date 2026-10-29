@@ -90,6 +90,13 @@ UPDATE_BLOCKED = "update.blocked"
 GOVERNOR_PAUSED = "governor.paused"
 GOVERNOR_RESUMED = "governor.resumed"
 
+#: MCP (spec 15.1): an outside server was reached, its tools were used, or the link failed.
+#: ZYNTHARO is both client and server here, so the same four facts cover both directions.
+MCP_CONNECTED = "mcp.connected"
+MCP_SERVER_STARTED = "mcp.server_started"
+MCP_TOOL_CALLED = "mcp.tool_called"
+MCP_FAILED = "mcp.failed"
+
 PLUGIN_AUTHORED = "plugin.authored"
 PLUGIN_INSTALLED = "plugin.installed"
 PLUGIN_FAILED = "plugin.failed"

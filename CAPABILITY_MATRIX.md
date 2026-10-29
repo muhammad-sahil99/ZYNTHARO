@@ -10,7 +10,7 @@ This is the **declared surface** of the product, across every platform the tools
 | `provisional` | implemented and usable here, but not yet proven on a real app | no — every receipt from it is labelled UNVERIFIED |
 | `unavailable` | no driver here, or the wrong platform | no — hidden from agents, shown to the user as "not available on this machine" |
 
-**195 declared tool(s)** in 19 group(s): 0 green, 155 provisional, 40 unavailable on every supported platform. 0 tool(s) have recorded real runs.
+**201 declared tool(s)** in 20 group(s): 0 green, 161 provisional, 40 unavailable on every supported platform. 0 tool(s) have recorded real runs.
 
 ## Declared tools
 
@@ -84,6 +84,12 @@ This is the **declared surface** of the product, across every platform the tools
 | `input_type` | input | input.type | provisional | 0 (0) | n/a | — | — | — | Wayland sessions may refuse synthetic input; the driver says so instead of guessing. |
 | `lessons_note` | schedule | memory.admin | provisional | 0 (0) | n/a | — | — | — | A run missed past its grace window is skipped with a reason, and GUI work is deferred while the session is locked. |
 | `lessons_recall` | schedule | memory.admin | provisional | 0 (0) | n/a | — | — | — | A run missed past its grace window is skipped with a reason, and GUI work is deferred while the session is locked. |
+| `mcp_add` | mcp | mcp.admin | provisional | 0 (0) | n/a | — | — | — | A tool is only callable without confirmation when its server declares it read-only; otherwise the owner is asked. Each call starts and stops its server, so a call costs a process start. |
+| `mcp_call` | mcp | mcp.call | provisional | 0 (0) | n/a | — | — | — | A tool is only callable without confirmation when its server declares it read-only; otherwise the owner is asked. Each call starts and stops its server, so a call costs a process start. |
+| `mcp_read` | mcp | mcp.read | provisional | 0 (0) | n/a | — | — | — | A tool is only callable without confirmation when its server declares it read-only; otherwise the owner is asked. Each call starts and stops its server, so a call costs a process start. |
+| `mcp_remove` | mcp | mcp.admin | provisional | 0 (0) | n/a | — | — | — | A tool is only callable without confirmation when its server declares it read-only; otherwise the owner is asked. Each call starts and stops its server, so a call costs a process start. |
+| `mcp_servers` | mcp | mcp.read | provisional | 0 (0) | n/a | — | — | — | A tool is only callable without confirmation when its server declares it read-only; otherwise the owner is asked. Each call starts and stops its server, so a call costs a process start. |
+| `mcp_tools` | mcp | mcp.read | provisional | 0 (0) | n/a | — | — | — | A tool is only callable without confirmation when its server declares it read-only; otherwise the owner is asked. Each call starts and stops its server, so a call costs a process start. |
 | `memory_board` | orchestration | memory.admin | provisional | 0 (0) | n/a | — | — | — | Fleet actions are permission-scoped; model reassignment is treated as irreversible. |
 | `memory_recall` | orchestration | memory.admin | provisional | 0 (0) | n/a | — | — | — | Fleet actions are permission-scoped; model reassignment is treated as irreversible. |
 | `memory_remember` | orchestration | memory.admin | provisional | 0 (0) | n/a | — | — | — | Fleet actions are permission-scoped; model reassignment is treated as irreversible. |

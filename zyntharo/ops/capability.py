@@ -148,6 +148,16 @@ GROUP_PROFILES: dict[str, dict[str, Any]] = {
         "needs": "",
         "limits": "Fleet actions are permission-scoped; model reassignment is treated as irreversible.",
     },
+    "mcp": {
+        "platforms": ("windows", "macos", "linux"),
+        "driver": "",
+        "needs": "nothing; the transport is JSON-RPC over stdio, started per call",
+        "limits": (
+            "A tool is only callable without confirmation when its server declares it read-only; "
+            "otherwise the owner is asked. Each call starts and stops its server, so a call costs "
+            "a process start."
+        ),
+    },
 }
 
 

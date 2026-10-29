@@ -133,6 +133,11 @@ FOREMAN = RoleTemplate(
         "channel.read",
         "connector.read",
         "connector.write",
+        # MCP (spec 15.1): a Foreman may use the external tools the owner configured, including
+        # the ones that change things -- and those still stop at the confirmation gate, exactly
+        # as a local destructive action does. Registering a new server stays owner-only.
+        "mcp.read",
+        "mcp.call",
     ),
     insignia="▲",
     color="#9d7bff",
@@ -175,6 +180,9 @@ OPERATIVE = RoleTemplate(
         "channel.read",
         "connector.read",
         "connector.write",
+        # An Operative reaches external read-only tools (a search, a lookup). Act tools on an
+        # outside server are the Foreman's, because the blast radius is outside our filesystem.
+        "mcp.read",
     ),
     insignia="●",
     color="#4ade80",
@@ -367,6 +375,7 @@ OWNER_ONLY_CAPABILITIES: dict[str, str] = {
     "connector.send": "an email or message sent from a customer's own account cannot be recalled; an agent prepares it, the owner sends it",
     "connector.admin": "connecting and revoking a customer's account credentials is the owner's own act, never an agent's",
     "camera.enroll": "camera consent and face enrolment are the owner's own acts, taken in the interface or with the PIN",
+    "mcp.admin": "registering an MCP server stores a command line that will later run as a program; that is executable content and the owner adds it, agents only use what is configured",
 }
 
 

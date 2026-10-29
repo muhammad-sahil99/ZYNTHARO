@@ -39,6 +39,9 @@ installed: that is why every driver is imported lazily and every failure path is
   `tools/hud_coverage.py` fails otherwise.
 * Rules that decide safety (verification tiers, irreversible capabilities, sensor thresholds)
   live in one module and are read by everyone. Two copies drift toward less protection.
+* A tool on an outside MCP server is only reachable without confirmation when *that server*
+  declares it read-only (`readOnlyHint === true`). A missing annotation is not a promise; keep
+  read and act separate (`mcp_read` / `mcp_call`) and keep `mcp serve`'s stdout protocol-only.
 * Long work must be interruptible: no unbounded loops, bounded batches, `stop_event`/`_stop`
   support, and a way to see what it is doing.
 

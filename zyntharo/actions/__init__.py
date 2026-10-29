@@ -22,6 +22,7 @@ from . import (
     hardware,
     input_control,
     localsearch,
+    mcp,
     office,
     office_files,
     orchestration,
@@ -66,6 +67,7 @@ DRIVER_MODULES = (
     fleet,
     presence,
     schedule,
+    mcp,
 )
 
 
@@ -158,4 +160,5 @@ __all__ = [
     "office_files",
     "browser",
     "whatsapp",
+    "mcp",
 ]

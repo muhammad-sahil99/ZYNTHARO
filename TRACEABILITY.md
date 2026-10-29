@@ -24,7 +24,8 @@ Legend: **T** = unit/integration test, **G** = release-gate operation (`python t
 | 13 | Voice: wake, STT, TTS, barge-in, languages | `zyntharo/voice/*.py` | T `tests/test_core.py`, `test_ops.py` (language), M `voice_quality`, `voice_duplex_call` |
 | 14.1 | Memory vault and per-item permissions | `zyntharo/memory.py` | T `test_core.py` |
 | 14.2 | Local search index: FTS5, incremental, verified results | `zyntharo/ops/index.py`, `zyntharo/actions/localsearch.py` | T `tests/test_index.py`, G `local_index`, M `search_benchmark` |
-| 15 | MCP and local API/SDKs | — | **not built** → LIMITATIONS |
+| 15.1 | MCP (both directions) | `zyntharo/mcp/{protocol,client,server,servers}.py`, `zyntharo/actions/mcp.py`, `zyntharo/cli.py` (`mcp serve|list|add|remove|tools|call`) | T `tests/test_mcp.py` (client runs a real subprocess); HTTP transport and OAuth are in LIMITATIONS |
+| 15.2 | Local REST/WS API, SDKs, remote control | — | **not built** → LIMITATIONS |
 | 16 | Hardware monitor: collection, plausibility, rules, protection, alerts | `zyntharo/ops/sensors.py`, `zyntharo/actions/hardware.py` | T `tests/test_sensors.py`, G `hardware_sensors`, M `sensor_rig`, `sensor_accuracy` |
 | 17 | HUD: particle core, wiring, panels, scenes, effects | `hud/*.js`, `hud/index.html`, `hud/styles.css`, `zyntharo/hud/service.py` | T `tests/test_hud.py`, `node tools/hud_visual_check.js`, G `hud_coverage` |
 | 18 | Mobile handover and remote control | — | **not built** → LIMITATIONS |

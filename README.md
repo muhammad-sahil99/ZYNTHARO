@@ -179,6 +179,26 @@ provider confirms the credential. Google and Microsoft are completed with a sign
 screen or a device code) started from that panel; nothing there ships a client secret, and anything
 that sends — mail, a message, a post — still waits for you.
 
+### Outside tools: MCP, in both directions
+
+ZYNTHARO speaks the Model Context Protocol, so the fleet can use any MCP server you configure —
+filesystem, GitHub, a database, a search index — and any MCP client can use ZYNTHARO's own tools.
+
+```bash
+zyntharo mcp add fs --command npx -y @modelcontextprotocol/server-filesystem ~/Documents
+zyntharo mcp tools fs                                  # start it, list its tools, stop it
+zyntharo mcp call fs list_directory --args '{"path":"."}'
+zyntharo mcp serve --allow read                        # offer our tools to another MCP client
+```
+
+The rules are the same ones the rest of the system follows. A tool whose server declares it
+read-only is callable by an agent holding `mcp.read`; every other tool needs `mcp.call` **and** your
+confirmation, because a missing annotation is the server's silence, not a promise. Registering a
+server is owner-only: a stored command line is executable content. Each call starts and stops its
+server, so nothing is left running between tasks, and `mcp serve` writes JSON-RPC to stdout and
+every human-readable line to stderr — a notice on stdout would be parsed as a frame and kill the
+session.
+
 - **Invoice intake** files every new invoice by year and quarter and records it once in an Excel
   ledger. Re-running it is free: identical content is skipped by hash.
 - **Reply desk** collects customer messages and prepares replies; **nothing is sent until the

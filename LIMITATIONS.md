@@ -88,7 +88,8 @@ the same app-password mailbox that works for filing also answers customers. Hone
 | 16.2 S2 | The privileged sensor helper (Super I/O fans, rails, some CPU registers) | the Hardware panel lists those sensors as **unavailable** with the reason, next to a note that the S2 helper is not installed |
 | 14.2 | Hybrid semantic search (local embeddings in `sqlite-vec`) | the Index panel says **not in this build (no embeddings)**; search is lexical FTS5 + BM25, so a query using different words from the document misses |
 | 14.2 | OS file-change notifications | freshness comes from a scan; the panel says **from scans only** |
-| 15.1 | MCP client and server | no MCP tools are exposed or consumed |
+| 15.1 | MCP over HTTP/SSE and OAuth-protected servers | only the stdio transport is implemented, which is what local servers use; a server that speaks HTTP, or one whose tools sit behind an OAuth flow, is refused with the reason rather than half-connected |
+| 15.1 | Merging an outside server's tools into the model's own tool list | an agent sees two tools, `mcp_read` and `mcp_call`, and asks the server what it offers first; the model never receives hundreds of foreign tool definitions in one prompt. Each call also starts and stops its server, so a call costs a process start |
 | 15.2 | Local REST/WebSocket API, SDKs, remote control from a phone | only the HUD's own local bridge exists |
 | 19 | Signed end-user installer for a machine with no coding environment | `tools/build_windows_bundle.py` and `tools/build_windows_installer.py` reject incomplete/tampered payloads, and `installer/ZYNTHARO.iss` defines the Windows installer; release signing and clean-VM acceptance are still required |
 | 18 | Mobile handover, phone-as-remote, end-to-end encrypted remote control | not present |

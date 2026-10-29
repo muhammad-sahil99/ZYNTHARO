@@ -58,6 +58,7 @@ packages = [
   "zyntharo.voice",
   "zyntharo.hud",
   "zyntharo.vision",
+  "zyntharo.mcp",
 ]
 
 [tool.pytest.ini_options]

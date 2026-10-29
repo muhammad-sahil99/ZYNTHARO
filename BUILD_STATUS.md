@@ -54,7 +54,10 @@ Read the three markers literally:
 | Mistake memory: failures distilled to lessons, known fix attached to the next error | done | `tests/test_lessons.py`, `zyntharo/ops/lessons.py` |
 | Scheduled work: one-shot and recurring, grace window, gated GUI runs, bounded tick | done | `tests/test_schedule.py`, `zyntharo/ops/schedule.py` |
 | Semantic search (embeddings, `sqlite-vec`) | unbuilt | lexical only; see LIMITATIONS |
-| MCP client/server, local REST/WS API, SDKs | unbuilt | spec 15 |
+| MCP client (JSON-RPC over stdio to an outside server: handshake, tool list, calls, deadlines, no orphans) | done as code; needs a server the customer configures to run against | `zyntharo/mcp/client.py`, `tests/test_mcp.py` (`ClientTests`, run against a real child process) |
+| MCP server (our capability-gated tools offered to another MCP client) | done | `zyntharo/mcp/server.py`, `zyntharo/cli.py` (`mcp serve`), `tests/test_mcp.py` (`ServerTests`); stdout verified to carry JSON-RPC only |
+| MCP tools for the fleet: read-only vs act split, stored servers, confirm gate | done | `zyntharo/actions/mcp.py`, `tests/test_mcp.py` (`ActionTests`, `StoreTests`) |
+| Local REST/WS API, SDKs, remote control from a phone | unbuilt | spec 15.2 |
 | Workflows: invoice intake (file, dedupe, xlsx ledger, read-back) | done (file work is OS-independent) | `tests/test_workflows.py`, gate `tests_core` |
 | Workflows: reply desk (durable outbox, mandatory approval, wrong-platform refusal) | done | `tests/test_workflows.py` |
 | Workflows: reply desk on a **connected mailbox** (search+read through the mail connector, folder-namespaced dedupe, threaded `Re:` replies, unreadable messages reported) | done as code; needs the customer's mailbox connected to run live | `zyntharo/workflows/mailbox.py`, `zyntharo/workflows/reply_desk.py`, `tests/test_mailbox_desk.py` |

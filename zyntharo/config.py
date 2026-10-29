@@ -88,6 +88,12 @@ CAPABILITIES: tuple[str, ...] = (
     "presence.read",
     "presence.decide",
     "task.schedule",
+    # MCP (spec 15.1). ``mcp.read`` reaches tools a server declares read-only; ``mcp.call``
+    # reaches everything else and is confirmation-gated, because the annotation is the server's
+    # own claim. ``mcp.admin`` adds or removes a stored command line, which is executable content.
+    "mcp.read",
+    "mcp.call",
+    "mcp.admin",
     "plugin.install",
     "plugin.author",
     "plugin.uninstall",

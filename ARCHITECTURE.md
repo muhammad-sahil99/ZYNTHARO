@@ -47,6 +47,7 @@ implementation pending.
 | Office (Word/Excel/Access/PowerPoint via COM; save/export/print/macros) | `zyntharo/actions/office.py` | DRIVER |
 | Browser (tabs, icons incl. DevTools/extensions/lens/menu, click, type, scroll, forms, extract, eval, downloads, cookies, history) | `zyntharo/actions/browser.py` | DRIVER |
 | WhatsApp (pair, chats, send/receive, voice notes, images, voice calls) | `zyntharo/actions/whatsapp.py` | DRIVER + SPEC |
+| MCP client and server (outside tools in, our tools out) | `zyntharo/mcp/` | DONE (stdio transport; per-call process) |
 | Plugin loader + capability-scoped host | `zyntharo/plugins/loader.py` | DONE |
 | Self-extension Forge (write → validate → install → register) | `zyntharo/plugins/forge.py` | DONE (LLM-driven; template-first, memory-assisted later) |
 | Voice session (wake, streaming STT, TTS, barge-in) | `zyntharo/voice/session.py` | SPEC + thin real interface |

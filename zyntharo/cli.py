@@ -428,6 +428,15 @@ def build_stack(
     schedule_actions.set_services(
         schedule_actions.ScheduleServices(scheduler=scheduler, lessons=lesson_book, bus=bus, config=config)
     )
+
+    # MCP (spec 15.1): the store of outside servers, so an agent can reach one without the CLI.
+    # Nothing is started here -- a server process appears only when a tool of it is called.
+    from .actions import mcp as mcp_actions
+    from .mcp.servers import ServerStore as McpServerStore
+
+    mcp_actions.set_services(
+        mcp_actions.McpServices(bus=bus, config=config, servers=McpServerStore(config.home_path))
+    )
     if start_agents:
         scheduler.start()
     stack.lessons = lesson_book
@@ -1322,6 +1331,144 @@ def cmd_capabilities(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """MCP (spec 15.1): serve our tools to another client, or reach an outside server's."""
+    from .config import CAPABILITIES
+    from .mcp.client import MCPError, MCPToolError, StdioMCPClient
+    from .mcp.server import READ_ONLY_CAPABILITIES, MCPServer
+    from .mcp.servers import ServerSpec, ServerStore, ServerStoreError
+
+    config = load_config(args.config)
+    store = ServerStore(config.home_path)
+    action = args.mcp_action
+
+    if action == "list":
+        if store.problem:
+            print(f"warning: {store.problem}")
+        servers = store.list()
+        if not servers:
+            print("no MCP servers configured")
+            print("add one, e.g.: zyntharo mcp add fs --env-note files -- npx -y @modelcontextprotocol/server-filesystem .")
+            return 0
+        for spec in servers:
+            env = ",".join(sorted(spec.env)) or "-"
+            print(f"{spec.name:<14} {' '.join(spec.command)}")
+            print(f"{'':<14} env: {env}   timeout: {spec.timeout:.0f}s   {spec.note}")
+        print(f"\nconfig: {store.path}")
+        return 0
+
+    if action == "add":
+        if args.command and args.command[0] == "--":
+            args.command = args.command[1:]
+        if not args.command:
+            print("error: give the server command after the name, e.g. zyntharo mcp add fs -- npx -y server-fs", file=sys.stderr)
+            return 2
+        env: dict[str, str] = {}
+        for item in args.env or []:
+            if "=" not in item:
+                print(f"error: --env needs KEY=VALUE, got {item!r}", file=sys.stderr)
+                return 2
+            key, _, value = item.partition("=")
+            env[key] = value
+        spec = ServerSpec(
+            name=args.name,
+            command=tuple(args.command),
+            env=env,
+            note=args.note or "",
+            timeout=float(args.timeout),
+        )
+        try:
+            store.add(spec, replace=bool(args.replace))
+        except ServerStoreError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"added MCP server {spec.name!r}: {' '.join(spec.command)}")
+        print("nothing was started; it runs when one of its tools is called")
+        return 0
+
+    if action == "remove":
+        try:
+            spec = store.remove(args.name)
+        except ServerStoreError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"removed {spec.name!r} (and {len(spec.env)} stored environment value(s))")
+        return 0
+
+    if action in {"tools", "call"}:
+        try:
+            spec = store.get(args.name)
+        except ServerStoreError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        client = spec.client()
+        try:
+            client.start()
+            tools = {tool["name"]: tool for tool in client.list_tools()}
+            if action == "tools":
+                print(f"{spec.name} -> {client.info.name} {client.info.version} (protocol {client.negotiated})")
+                if client.instructions:
+                    print(f"instructions: {client.instructions[:200]}")
+                for name in sorted(tools):
+                    read_only = bool((tools[name].get("annotations") or {}).get("readOnlyHint") is True)
+                    print(f"  {name:<28} {'read-only' if read_only else 'needs confirmation'}")
+                print(f"\n{len(tools)} tool(s)")
+                return 0
+            tool = args.tool
+            if tool not in tools:
+                print(f"error: {spec.name!r} has no tool {tool!r}; try: zyntharo mcp tools {spec.name}", file=sys.stderr)
+                return 2
+            read_only = bool((tools[tool].get("annotations") or {}).get("readOnlyHint") is True)
+            if not read_only and not args.confirm:
+                print(
+                    f"{tool!r} does not declare itself read-only, so it can change something. "
+                    f"Re-run with --confirm once you have read what it does.",
+                    file=sys.stderr,
+                )
+                return 2
+            arguments = json.loads(args.args) if args.args else {}
+            print(client.call_tool(tool, arguments))
+            return 0
+        except (MCPError, MCPToolError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        finally:
+            client.close()
+
+    if action == "serve":
+        # stdout is the protocol stream here: every human-readable line goes to stderr, or the
+        # first notice would be parsed as a JSON-RPC frame and the session would die.
+        grants = set(READ_ONLY_CAPABILITIES)
+        for item in args.allow or []:
+            if item == "all":
+                grants |= set(CAPABILITIES)
+            elif item == "write":
+                grants |= {cap for cap in CAPABILITIES if cap not in READ_ONLY_CAPABILITIES}
+        bus = EventBus()
+        registry = build_registry(config=config, bus=bus)
+        server = MCPServer(
+            registry=registry,
+            capabilities=grants,
+            agent_id=args.agent,
+            config=config,
+            bus=bus,
+        )
+        exposed = len(server.tool_list())
+        print(
+            f"zyntharo mcp serve: {exposed} tool(s) exposed for {args.agent!r}; "
+            f"{len(grants)} capability(ies). stdout is JSON-RPC.",
+            file=sys.stderr,
+        )
+        if not exposed:
+            print("warning: no tools are exposed; grant more with --allow write|all", file=sys.stderr)
+        served = server.serve_stdio()
+        print(f"zyntharo mcp serve: {served} tool call(s) served; exiting", file=sys.stderr)
+        return 0
+
+    print(f"error: unknown mcp action {action!r}", file=sys.stderr)
+    return 2
+
+
 def cmd_gate(args: argparse.Namespace) -> int:
     """Run the master release gate (contract 22.3)."""
     tools_dir = resource_path("tools")
@@ -1478,6 +1625,37 @@ def build_parser() -> argparse.ArgumentParser:
     caps.add_argument("--all", action="store_true", help="include tools this machine cannot run")
     caps.add_argument("--json", action="store_true")
     caps.set_defaults(func=cmd_capabilities)
+
+    mcp = sub.add_parser(
+        "mcp",
+        help="MCP servers and clients: use outside tools, or serve ours (spec 15.1)",
+    )
+    mcp_sub = mcp.add_subparsers(dest="mcp_action", required=True)
+    mcp_sub.add_parser("list", help="configured servers (nothing is started)").set_defaults(func=cmd_mcp)
+    mcp_add = mcp_sub.add_parser("add", help="register a server command; it does not run now")
+    mcp_add.add_argument("name", help="short name, used as the tool prefix")
+    mcp_add.add_argument("--env", action="append", metavar="KEY=VALUE", help="environment for the server, e.g. a token")
+    mcp_add.add_argument("--note", default="", help="why it is configured")
+    mcp_add.add_argument("--timeout", type=float, default=25.0, help="per-request timeout in seconds (1-600)")
+    mcp_add.add_argument("--replace", action="store_true", help="overwrite an existing entry of the same name")
+    mcp_add.add_argument("--command", nargs=argparse.REMAINDER, help="executable and arguments, after --")
+    mcp_add.set_defaults(func=cmd_mcp)
+    mcp_remove = mcp_sub.add_parser("remove", help="delete a server entry and its stored environment")
+    mcp_remove.add_argument("name")
+    mcp_remove.set_defaults(func=cmd_mcp)
+    mcp_tools = mcp_sub.add_parser("tools", help="start a server, list its tools, stop it")
+    mcp_tools.add_argument("name")
+    mcp_tools.set_defaults(func=cmd_mcp)
+    mcp_call = mcp_sub.add_parser("call", help="call one tool on a server")
+    mcp_call.add_argument("name")
+    mcp_call.add_argument("tool")
+    mcp_call.add_argument("--args", default="", metavar="JSON", help="arguments object, e.g. '{\"path\": \".\"}'")
+    mcp_call.add_argument("--confirm", action="store_true", help="confirm a tool that is not read-only")
+    mcp_call.set_defaults(func=cmd_mcp)
+    mcp_serve = mcp_sub.add_parser("serve", help="offer our tools over stdio to another MCP client")
+    mcp_serve.add_argument("--allow", action="append", choices=["read", "write", "all"], help="raise the grant (default: read-only tools)")
+    mcp_serve.add_argument("--agent", default="mcp-client", help="the name calls are attributed to in the audit trail")
+    mcp_serve.set_defaults(func=cmd_mcp)
 
     gate = sub.add_parser("gate", help="master release gate: every acceptance check (contract 22.3)")
     gate.add_argument("--milestone", default="GA", help="M0..M4 or GA")

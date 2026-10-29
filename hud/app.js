@@ -213,6 +213,28 @@
       renderLessonsSoon();
     },
 
+    /* ---- MCP: outside tools we call, and other clients calling ours (spec 15.1) ---- */
+    "mcp.connected": (e) => {
+      const p = e.payload || {};
+      core.pulseShear(0.16);
+      core.setShape("helix");
+      coreState("external tools", (p.server || "server") + " · " + (p.tools || 0) + " tool(s)");
+    },
+    "mcp.server_started": (e) => {
+      const p = e.payload || {};
+      coreState("serving tools", (p.tools || 0) + " exposed to " + (e.source || "a client"));
+    },
+    "mcp.tool_called": (e) => {
+      const p = e.payload || {};
+      core.pulseEnergy(p.ok === false ? 0.1 : 0.22);
+      coreState(p.ok === false ? "external tool failed" : "external tool ran", (p.tool || "") + (p.verified ? " · verified" : ""));
+    },
+    "mcp.failed": (e) => {
+      const p = e.payload || {};
+      core.pulseShear(0.24);
+      coreState("external tool unavailable", (p.server || "") + (p.tool ? "/" + p.tool : "") + " · " + (p.reason || "").slice(0, 70));
+    },
+
     /* ---- presence: who is speaking, who is in the room, may I talk ---- */
     "voice.speaker": (e) => {
       const p = e.payload || {};
