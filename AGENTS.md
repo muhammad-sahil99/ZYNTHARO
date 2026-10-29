@@ -21,7 +21,7 @@ python tools/capability_matrix.py            # regenerate CAPABILITY_MATRIX.md +
 python tools/hud_coverage.py                 # regenerate hud/coverage.json
 node tools/hud_visual_check.js               # HUD visual layer, no browser needed
 python tools/release_gate.py --milestone M0  # the master gate
-orbynth doctor                                # which drivers exist on this host
+zyntharo doctor                                # which drivers exist on this host
 ```
 
 Dependencies are optional extras in `pyproject.toml`. Tests must pass with **none** of them
@@ -29,13 +29,13 @@ installed: that is why every driver is imported lazily and every failure path is
 
 ## Architecture rules
 
-* `orbynth/cli.py::build_stack` is the single assembly point. A new subsystem must be created
+* `zyntharo/cli.py::build_stack` is the single assembly point. A new subsystem must be created
   there, handed to everything that needs it, and stopped in `Stack.shutdown` — a component that is
   built but not wired is the failure this project already had once.
 * Actions are declared with the `@action` decorator and are gated by capability. New capabilities
-  go in `orbynth/config.py::CAPABILITIES`; irreversible ones in `orbynth/ops/risk.py` (the single
+  go in `zyntharo/config.py::CAPABILITIES`; irreversible ones in `zyntharo/ops/risk.py` (the single
   copy — do not duplicate that list).
-* Every event topic is a constant in `orbynth/events.py` and must have a handler in `hud/app.js`;
+* Every event topic is a constant in `zyntharo/events.py` and must have a handler in `hud/app.js`;
   `tools/hud_coverage.py` fails otherwise.
 * Rules that decide safety (verification tiers, irreversible capabilities, sensor thresholds)
   live in one module and are read by everyone. Two copies drift toward less protection.

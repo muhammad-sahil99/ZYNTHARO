@@ -1,4 +1,4 @@
-/* ORBYNTH live wiring — canvas 2D overlay.
+/* ZYNTHARO live wiring — canvas 2D overlay.
  *
  * The wires are not decoration: they are the fleet's real topology and traffic.
  *   • ring radius encodes rank (Sovereign inside, Steward next, Foremen, then specialists

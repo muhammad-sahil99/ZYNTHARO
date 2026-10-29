@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from orbynth.resources import app_root, resource_path
+from zyntharo.resources import app_root, resource_path
 from tools.build_windows_bundle import REQUIRED_PAYLOAD, validate_payload, write_manifest
 from tools.build_windows_installer import validate_manifest
 
@@ -30,7 +30,7 @@ class WindowsBundleTests(unittest.TestCase):
     def test_complete_payload_gets_a_hashed_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "ORBYNTH.exe").write_bytes(b"desktop executable")
+            (root / "ZYNTHARO.exe").write_bytes(b"desktop executable")
             (root / "hud").mkdir()
             (root / "hud" / "index.html").write_text("hud", encoding="utf-8")
             sidecar = root / "sidecars" / "whatsapp"

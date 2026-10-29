@@ -20,9 +20,9 @@ import time
 import unittest
 import wave
 
-from orbynth.actions import presence as presence_tools
-from orbynth.ops.lessons import LessonBook
-from orbynth.ops.presence import (
+from zyntharo.actions import presence as presence_tools
+from zyntharo.ops.lessons import LessonBook
+from zyntharo.ops.presence import (
     ASK_OWNER,
     SILENT,
     SPEAK,
@@ -34,9 +34,9 @@ from orbynth.ops.presence import (
     PresenceSnapshot,
     VoiceView,
 )
-from orbynth.ops.schedule import Scheduler
-from orbynth.vision.camera import CameraDenied, CameraOsDenied, CameraService, Detector, Face
-from orbynth.voice.speakers import SpeakerRegistry
+from zyntharo.ops.schedule import Scheduler
+from zyntharo.vision.camera import CameraDenied, CameraOsDenied, CameraService, Detector, Face
+from zyntharo.voice.speakers import SpeakerRegistry
 from tests.helpers import Stack
 from tests.test_speakers import tone
 

@@ -1,11 +1,27 @@
-# ORBYNTH
+# ZYNTHARO Beta
 
-**A desktop-resident AI operative.** ORBYNTH is a voice-first, multi-agent automation
+**A desktop-resident AI operative.** ZYNTHARO is a voice-first, multi-agent automation
 platform that operates a real computer the way a human does — vision, mouse, keyboard,
 browser, file system, Office applications — and extends itself by writing and installing
 its own plugins.
 
-- CLI command: `orbynth`
+## Which ZYNTHARO this is
+
+Three builds share the name and nothing else, so the marker is on the wordmark, the window title,
+the installer and the shortcut — never inferred from a folder path.
+
+| build | what it is | where it lives |
+|---|---|---|
+| **ZYNTHARO Alpha** | the early prototype; features arrive and change without notice | separate tree |
+| **ZYNTHARO Beta** | **this repository** — Python + Node, the full working system described here | `zyntharo/`, `hud/`, `sidecars/` |
+| **ZYNTHARO Core** | the Rust + Tauri rewrite, the long-term product | separate tree |
+
+Everything in this README, and every command below, is the **Beta**: the CLI is `zyntharo`, the
+package is `zyntharo-beta`, the data directory is `ZYNTHARO`, and the installer is
+`ZYNTHARO-Beta-Setup-<version>.exe`. A Beta install and a Core install can coexist on one machine
+because the shortcuts and program groups are named differently.
+
+- CLI command: `zyntharo`
 - HUD (the interface): a WebGL particle core with dynamic wiring, hosted by the local
   bridge and rendered in the OS webview.
 - Verified-clean alternate brand name: `SYNOVARIS`.
@@ -25,7 +41,7 @@ its own plugins.
 ## Install (developer machine)
 
 ```bash
-git clone <this repo> && cd orbynth
+git clone <this repo> && cd zyntharo
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e .                                  # core only, stdlib-first
 pip install -e ".[desktop]"                       # + input, vision, browser, Windows/Office
@@ -40,14 +56,14 @@ nothing else. Optional extras are exactly that — optional.
 ## Run
 
 ```bash
-orbynth doctor            # environment + capability report
-orbynth hud               # start the HUD bridge and webview (the interface)
-orbynth hud --no-webview  # bridge only; open printed URL in any browser
-orbynth run "open my browser, go to my invoices, download the newest PDF"
-orbynth run "file the invoices" --expect ~/Documents/invoices/filed.xlsx   # a real "done" check
-orbynth agents            # list configured agent roster + models + quotas
-orbynth plugins list      # installed plugins, permissions, health
-orbynth voice             # voice session (wake word + streaming)
+zyntharo doctor            # environment + capability report
+zyntharo hud               # start the HUD bridge and webview (the interface)
+zyntharo hud --no-webview  # bridge only; open printed URL in any browser
+zyntharo run "open my browser, go to my invoices, download the newest PDF"
+zyntharo run "file the invoices" --expect ~/Documents/invoices/filed.xlsx   # a real "done" check
+zyntharo agents            # list configured agent roster + models + quotas
+zyntharo plugins list      # installed plugins, permissions, health
+zyntharo voice             # voice session (wake word + streaming)
 ```
 
 ## Operate it
@@ -55,24 +71,24 @@ orbynth voice             # voice session (wake word + streaming)
 First run asks who the owner is:
 
 ```bash
-orbynth owner setup       # choose a PIN; prints the one-time recovery code
-orbynth owner status      # who owns this profile, is the session valid
+zyntharo owner setup       # choose a PIN; prints the one-time recovery code
+zyntharo owner status      # who owns this profile, is the session valid
 ```
 
 Then the operational commands, one per hole that revision 1 of the design left open:
 
 ```bash
-orbynth billing           # who pays: BYOK (default) / gateway / local-only, and what blocks it
-orbynth catalog check     # are the configured model IDs still served by their providers?
-orbynth catalog apply --file model-catalog.json --public-key pinned.pem   # only between actions
-orbynth catalog rollback  # one command back to the previous configuration
-orbynth supervise clean   # reconcile jobs a previous session left running
-orbynth gate              # the master release gate: every acceptance check, blocking or not
+zyntharo billing           # who pays: BYOK (default) / gateway / local-only, and what blocks it
+zyntharo catalog check     # are the configured model IDs still served by their providers?
+zyntharo catalog apply --file model-catalog.json --public-key pinned.pem   # only between actions
+zyntharo catalog rollback  # one command back to the previous configuration
+zyntharo supervise clean   # reconcile jobs a previous session left running
+zyntharo gate              # the master release gate: every acceptance check, blocking or not
 tools/release_gate.py --list   # what the gate covers, by milestone
 python3 tools/hud_coverage.py  # every emitted topic has a place in the interface (blocking at M4)
 ```
 
-`orbynth run` writes a contract before the work starts and checks the finished state against
+`zyntharo run` writes a contract before the work starts and checks the finished state against
 it, rather than trusting the agent's own summary. Without `--expect` the criteria are the
 files the task actually produced (checked as they are written), so a task that did nothing
 is reported `not_met` or `uncertain`, never `done`.
@@ -147,14 +163,14 @@ What is sold is not the tool count, it is three recurring jobs, each with its ow
 (see [PRODUCT.md](PRODUCT.md)):
 
 ```bash
-orbynth workflows list
-orbynth workflows run --name invoice_intake \
+zyntharo workflows list
+zyntharo workflows run --name invoice_intake \
   --params '{"source":"~/Invoices/in","dest":"~/Invoices/filed","ledger":"~/Invoices/ledger.xlsx"}'
-orbynth workflows run --name daily_report \
+zyntharo workflows run --name daily_report \
   --params '{"ledger":"~/Invoices/ledger.xlsx","out_dir":"~/Reports"}'
-orbynth channels            # which platform can actually be used here, and why the others cannot
-orbynth connectors          # every outside account, its state, and its operations
-orbynth connectors verify --connector slack
+zyntharo channels            # which platform can actually be used here, and why the others cannot
+zyntharo connectors          # every outside account, its state, and its operations
+zyntharo connectors verify --connector slack
 ```
 
 The same thing lives in the app: the **Accounts** panel lists every outside account, asks for exactly
@@ -166,11 +182,11 @@ that sends — mail, a message, a post — still waits for you.
 - **Invoice intake** files every new invoice by year and quarter and records it once in an Excel
   ledger. Re-running it is free: identical content is skipped by hash.
 - **Reply desk** collects customer messages and prepares replies; **nothing is sent until the
-  owner approves it** (`orbynth` action `reply_approve`, or the app). Drafts live in SQLite, so a
+  owner approves it** (`zyntharo` action `reply_approve`, or the app). Drafts live in SQLite, so a
   crash loses no work and no message is answered twice. It reads a mailbox as easily as a chat:
 
   ```bash
-  orbynth workflows run --name reply_desk \
+  zyntharo workflows run --name reply_desk \
     --params '{"channel":"mail","folder":"INBOX","unseen_only":true,"limit":20}'
   ```
 
@@ -235,7 +251,7 @@ The action layer is verified, not assumed. Three behaviours matter more than the
 
 ### Voice on a call
 
-The phrase you ask ORBYNTH to say goes through the best voice tier the machine can run, and the
+The phrase you ask ZYNTHARO to say goes through the best voice tier the machine can run, and the
 live tier is always reported (`whatsapp_audio`):
 
 | tier | engines | how it sounds |
@@ -256,7 +272,7 @@ returns the caller's words.
 ## Repository layout
 
 ```
-orbynth/            Python core package (stdlib-first)
+zyntharo/            Python core package (stdlib-first)
   config.py         settings, providers, quota specs, agent roster
   events.py         typed async event bus; every HUD wire and log line comes from here
   memory.py         SQLite per-agent memory (episodic + semantic + shared board)

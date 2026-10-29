@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Windows installer from a verified ORBYNTH payload on a Windows release runner."""
+"""Build the Windows installer from a verified ZYNTHARO payload on a Windows release runner."""
 from __future__ import annotations
 
 import argparse
@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PAYLOAD = ROOT / "dist" / "windows" / "ORBYNTH"
+DEFAULT_PAYLOAD = ROOT / "dist" / "windows" / "ZYNTHARO"
 
 
 def sha256(path: Path) -> str:
@@ -43,7 +43,7 @@ def validate_manifest(payload: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build the signed ORBYNTH Windows installer.")
+    parser = argparse.ArgumentParser(description="Build the signed ZYNTHARO Windows installer.")
     parser.add_argument("--payload", type=Path, default=DEFAULT_PAYLOAD)
     parser.add_argument("--check", action="store_true", help="validate the payload but do not invoke Inno Setup")
     args = parser.parse_args(argv)
@@ -62,8 +62,8 @@ def main(argv: list[str] | None = None) -> int:
         print("installer refused: Inno Setup 6 compiler (ISCC.exe) is not installed", file=sys.stderr)
         return 2
     manifest = json.loads((args.payload / "bundle-manifest.json").read_text(encoding="utf-8"))
-    env = {**os.environ, "ORBYNTH_PAYLOAD_DIR": str(args.payload), "ORBYNTH_VERSION": str(manifest["version"])}
-    result = subprocess.run([iscc, str(ROOT / "installer" / "ORBYNTH.iss")], cwd=ROOT, env=env, check=False)
+    env = {**os.environ, "ZYNTHARO_PAYLOAD_DIR": str(args.payload), "ZYNTHARO_VERSION": str(manifest["version"])}
+    result = subprocess.run([iscc, str(ROOT / "installer" / "ZYNTHARO.iss")], cwd=ROOT, env=env, check=False)
     return result.returncode
 
 

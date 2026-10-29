@@ -15,7 +15,7 @@ import tempfile
 import unittest
 import wave
 
-from orbynth.voice import speakers
+from zyntharo.voice import speakers
 
 
 def tone(f0: float, seconds: float = 1.2, amp: int = 9000, rate: int = 16_000) -> bytes:

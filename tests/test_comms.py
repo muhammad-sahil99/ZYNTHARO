@@ -17,8 +17,8 @@ import os
 import tempfile
 import unittest
 
-from orbynth.agents.comms import AgentComms
-from orbynth.events import AGENT_HELP_ANSWERED, AGENT_HELP_REQUEST, EventBus
+from zyntharo.agents.comms import AgentComms
+from zyntharo.events import AGENT_HELP_ANSWERED, AGENT_HELP_REQUEST, EventBus
 
 
 class CommsTests(unittest.TestCase):

@@ -18,10 +18,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orbynth.channels.base import ChannelMessage
-from orbynth.workflows.base import DONE
-from orbynth.workflows.mailbox import MailboxSource, address_of, source_for, timestamp_of
-from orbynth.workflows.reply_desk import PENDING, SENT, ReplyDesk, WorkflowError
+from zyntharo.channels.base import ChannelMessage
+from zyntharo.workflows.base import DONE
+from zyntharo.workflows.mailbox import MailboxSource, address_of, source_for, timestamp_of
+from zyntharo.workflows.reply_desk import PENDING, SENT, ReplyDesk, WorkflowError
 
 
 class FakeMailbox:

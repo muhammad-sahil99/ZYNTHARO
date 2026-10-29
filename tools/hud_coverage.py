@@ -6,7 +6,7 @@ governor) shipped while the HUD ignored its topics, so the app looked calm while
 were being killed and updates applied.
 
 This tool is the single source of that check. It reads the topic constants from
-``orbynth/events.py``, adds any topic emitted as a literal string in the codebase, reads the
+``zyntharo/events.py``, adds any topic emitted as a literal string in the codebase, reads the
 handler keys out of ``hud/app.js``, and writes ``hud/coverage.json``. ``tests/test_hud.py``
 imports the same functions and asserts both that nothing is unhandled and that the committed
 file matches, so the file and the check cannot drift apart.
@@ -25,8 +25,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-EVENTS = ROOT / "orbynth" / "events.py"
-PACKAGE = ROOT / "orbynth"
+EVENTS = ROOT / "zyntharo" / "events.py"
+PACKAGE = ROOT / "zyntharo"
 HUD_APP = ROOT / "hud" / "app.js"
 COVERAGE = ROOT / "hud" / "coverage.json"
 
@@ -35,7 +35,7 @@ _KEY = re.compile(r'^\s{4}"([a-z][a-z0-9._]*)"\s*:', re.MULTILINE)
 #: hud/app.js also handles whole families: `topic.startsWith("agent.")` in the frame router.
 _PREFIX = re.compile(r'topic\.startsWith\("([a-z][a-z0-9._]*\.)"\)')
 #: Topics the bridge delivers as their own frame type instead of an event frame, with the
-#: frame type each becomes (see orbynth/hud/bridge.py). Handled in the switch on message.type.
+#: frame type each becomes (see zyntharo/hud/bridge.py). Handled in the switch on message.type.
 FRAME_ROUTED = {
     "hud.scene": "scene",
     "hud.notice": "notice",
@@ -44,7 +44,7 @@ FRAME_ROUTED = {
 
 
 def declared_topics(events_path: Path = EVENTS) -> list[str]:
-    """Every topic constant in orbynth/events.py, in declaration order."""
+    """Every topic constant in zyntharo/events.py, in declaration order."""
     found: list[str] = []
     for line in events_path.read_text(encoding="utf-8").splitlines():
         match = re.match(r'^([A-Z][A-Z0-9_]*)\s*=\s*"([a-z][a-z0-9._]*)"\s*$', line)
@@ -104,7 +104,7 @@ def report(events_path: Path = EVENTS, package: Path = PACKAGE, app_path: Path =
     handled = set(hud_topics(app_path))
     prefixes = hud_prefixes(app_path)
     return {
-        "generated_from": "orbynth/events.py",
+        "generated_from": "zyntharo/events.py",
         "handler_file": "hud/app.js",
         "topics": topics,
         "handled": sorted(t for t in topics if covered(t, handled, prefixes)),

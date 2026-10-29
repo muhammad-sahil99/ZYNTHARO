@@ -1,5 +1,5 @@
 {
-  "note": "Every interface ORBYNTH persists or exposes is listed here with the semantic version of its schema and the definition that implements it. `frozen` means a stored record exists in that shape and a change needs a migration; `draft` means nothing is stored yet and the shape may still move. The runtime refuses a producer whose major version differs from the reader's, and warns on a minor difference (see orbynth/contracts/compat.py).",
+  "note": "Every interface ZYNTHARO persists or exposes is listed here with the semantic version of its schema and the definition that implements it. `frozen` means a stored record exists in that shape and a change needs a migration; `draft` means nothing is stored yet and the shape may still move. The runtime refuses a producer whose major version differs from the reader's, and warns on a minor difference (see zyntharo/contracts/compat.py).",
   "policy": {
     "versioning": "semver: major = an existing reader cannot parse it, minor = additive and readable, patch = documentation or constraint-only",
     "on_major_mismatch": "refuse, with the two versions and the migration name in the message",

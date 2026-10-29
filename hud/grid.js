@@ -1,4 +1,4 @@
-/* ORBYNTH system grid — the instrument's backdrop, canvas 2D.
+/* ZYNTHARO system grid — the instrument's backdrop, canvas 2D.
 
    In the reference plate the console is not floating in space: it sits inside a mesh of
    converging structural lines, ruled edges and columns of tiny data that scroll past. That is

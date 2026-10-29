@@ -8,11 +8,11 @@ import tempfile
 import unittest
 
 from tests.helpers import Stack
-from orbynth.agents.identity import AgentIdentity
-from orbynth.agents.roles import role_names, role_template
-from orbynth.config import AgentConfig
-from orbynth.events import AGENT_REPORT, AGENT_SPAWNED, MODEL_FALLBACK
-from orbynth.plugins.loader import PluginHost, PluginManifest
+from zyntharo.agents.identity import AgentIdentity
+from zyntharo.agents.roles import role_names, role_template
+from zyntharo.config import AgentConfig
+from zyntharo.events import AGENT_REPORT, AGENT_SPAWNED, MODEL_FALLBACK
+from zyntharo.plugins.loader import PluginHost, PluginManifest
 
 
 class RoleAndIdentityTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class RoleAndIdentityTests(unittest.TestCase):
 class AgentLoopTests(unittest.TestCase):
     def setUp(self):
         self.stack = Stack()
-        self.workdir = tempfile.mkdtemp(prefix="orbynth-agent-")
+        self.workdir = tempfile.mkdtemp(prefix="zyntharo-agent-")
 
     def tearDown(self):
         self.stack.close()
@@ -63,7 +63,7 @@ class AgentLoopTests(unittest.TestCase):
     def test_the_live_task_path_checks_the_outcome_against_a_written_contract(self):
         # The contract mechanism existed but no live path asserted it produced a verdict, so
         # the wiring could break silently and every task would look verified.
-        from orbynth.ops.verification import OutcomeVerifier, contract_for_request
+        from zyntharo.ops.verification import OutcomeVerifier, contract_for_request
 
         verifier = OutcomeVerifier(self.stack.bus)
         verifier.register_probe("file_exists", lambda c, o: (os.path.exists(c.target), c.target))
@@ -79,7 +79,7 @@ class AgentLoopTests(unittest.TestCase):
         self.assertIn("filesystem.write", contract.intended_capabilities)
 
     def test_the_live_task_path_can_report_a_met_outcome(self):
-        from orbynth.ops.verification import OutcomeVerifier, contract_for_request
+        from zyntharo.ops.verification import OutcomeVerifier, contract_for_request
 
         verifier = OutcomeVerifier(self.stack.bus)
         verifier.register_probe("file_exists", lambda c, o: (os.path.exists(c.target), c.target))
@@ -157,7 +157,7 @@ class AgentLoopTests(unittest.TestCase):
 class OrchestrationTests(unittest.TestCase):
     def setUp(self):
         self.stack = Stack()
-        self.workdir = tempfile.mkdtemp(prefix="orbynth-team-")
+        self.workdir = tempfile.mkdtemp(prefix="zyntharo-team-")
 
     def tearDown(self):
         self.stack.close()
@@ -168,7 +168,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertTrue(any(event.topic == AGENT_SPAWNED for event in self.stack.events))
 
     def test_team_runs_workers_in_parallel_and_returns_one_consolidated_report(self):
-        from orbynth.agents.orchestrator import WorkItem
+        from zyntharo.agents.orchestrator import WorkItem
 
         items = [
             WorkItem(title=f"file {index}", objective=f'use: fs_write {{"path": "{os.path.join(self.workdir, f"f{index}.txt")}", "content": "x"}}', capabilities=["filesystem.write"])
@@ -188,8 +188,8 @@ class OrchestrationTests(unittest.TestCase):
         The governor's cap has to apply *before* submission, otherwise a busy laptop allocates
         the memory first and learns about the pressure afterwards.
         """
-        from orbynth.agents.orchestrator import WorkItem
-        from orbynth.ops.governor import ResponsivenessGovernor
+        from zyntharo.agents.orchestrator import WorkItem
+        from zyntharo.ops.governor import ResponsivenessGovernor
 
         self.stack.orchestrator.governor = ResponsivenessGovernor(
             detector=lambda: [], load_provider=lambda: 0.7, max_workers=2
@@ -209,14 +209,14 @@ class OrchestrationTests(unittest.TestCase):
         self.assertTrue(all(report["status"] == "done" for report in result["reports"]))
 
     def test_an_ungoverned_team_still_uses_the_configured_width(self):
-        from orbynth.agents.orchestrator import WorkItem
+        from zyntharo.agents.orchestrator import WorkItem
 
         items = [WorkItem(title=f"wide {index}", objective="report done") for index in range(3)]
         result = self.stack.orchestrator.run_team("wide work", items)
         self.assertEqual(result["batches"], [3], result["batches"])
 
     def test_worker_crash_does_not_break_the_team(self):
-        from orbynth.agents.orchestrator import WorkItem
+        from zyntharo.agents.orchestrator import WorkItem
 
         items = [WorkItem(title="bad", objective="use: fs_write {\"path\": \"/proc/nope/x\", \"content\": \"x\"}", capabilities=["filesystem.write"])]
         result = self.stack.orchestrator.run_team("try something impossible", items)
@@ -251,7 +251,7 @@ class OrchestrationTests(unittest.TestCase):
             stack.close()
 
     def test_orchestration_tools_are_capability_gated(self):
-        from orbynth.actions.orchestration import SERVICES
+        from zyntharo.actions.orchestration import SERVICES
 
         self.assertIsNotNone(SERVICES)
         allowed = self.stack.tool("agent_spawn", role="probe", capabilities=["agent.spawn"])
@@ -286,7 +286,7 @@ class OrchestrationTests(unittest.TestCase):
 class PluginTests(unittest.TestCase):
     def setUp(self):
         self.stack = Stack()
-        self.workdir = tempfile.mkdtemp(prefix="orbynth-plugin-")
+        self.workdir = tempfile.mkdtemp(prefix="zyntharo-plugin-")
 
     def tearDown(self):
         self.stack.close()
@@ -331,7 +331,7 @@ class PluginTests(unittest.TestCase):
             json.dump({"name": "greedy", "capabilities": ["shell.exec"], "actions": ["x"]}, handle)
         with open(os.path.join(directory, "actions.py"), "w") as handle:
             handle.write(
-                "from orbynth.actions.registry import action, ActionContext\n"
+                "from zyntharo.actions.registry import action, ActionContext\n"
                 "@action(name='x', description='x', capability='shell.exec', parameters={'type':'object','properties':{}})\n"
                 "def x(ctx: ActionContext):\n    return {'ran': True}\n"
             )
@@ -347,7 +347,7 @@ class PluginTests(unittest.TestCase):
             json.dump({"name": "broken", "capabilities": ["filesystem.read"], "actions": ["y"]}, handle)
         with open(os.path.join(directory, "actions.py"), "w") as handle:
             handle.write(
-                "from orbynth.actions.registry import action, ActionContext\n"
+                "from zyntharo.actions.registry import action, ActionContext\n"
                 "@action(name='y', description='y', capability='filesystem.read', parameters={'type':'object','properties':{}})\n"
                 "def y(ctx: ActionContext):\n    return None\n"
                 "def self_test(registry):\n    return {'ok': False, 'error': 'deliberately broken'}\n"
@@ -395,7 +395,7 @@ class ConfirmationGateTests(unittest.TestCase):
         from tests.helpers import Stack
 
         self.stack = Stack()
-        self.workdir = tempfile.mkdtemp(prefix="orbynth-confirm-")
+        self.workdir = tempfile.mkdtemp(prefix="zyntharo-confirm-")
 
     def tearDown(self):
         self.stack.close()
@@ -407,7 +407,7 @@ class ConfirmationGateTests(unittest.TestCase):
         return path
 
     def test_a_sovereign_still_asks_before_a_destructive_action(self):
-        from orbynth.events import ACTION_CONFIRM
+        from zyntharo.events import ACTION_CONFIRM
 
         seen: list[dict] = []
         self.stack.bus.subscribe(ACTION_CONFIRM, lambda event: seen.append(dict(event.payload)))

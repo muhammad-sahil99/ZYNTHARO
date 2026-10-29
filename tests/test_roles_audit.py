@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import unittest
 
-from orbynth.agents import roles
-from orbynth.config import CAPABILITIES, expand_capabilities
+from zyntharo.agents import roles
+from zyntharo.config import CAPABILITIES, expand_capabilities
 
 
 def held_by_delegable_roles() -> set[str]:

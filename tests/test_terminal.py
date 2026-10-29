@@ -13,9 +13,9 @@ import tempfile
 import time
 import unittest
 
-from orbynth.actions.registry import ActionContext, ActionRegistry
-from orbynth.ops import terminal as term
-from orbynth.ops.terminal import (
+from zyntharo.actions.registry import ActionContext, ActionRegistry
+from zyntharo.ops import terminal as term
+from zyntharo.ops.terminal import (
     L1,
     L2,
     L3,
@@ -158,7 +158,7 @@ class LiveSessionTests(unittest.TestCase):
         self.assertIn("/tmp", "\n".join(result.output))
 
     def test_a_failure_is_reported_even_though_the_shell_survived(self) -> None:
-        result = self.session.run("orbynth_command_that_does_not_exist", timeout=15)
+        result = self.session.run("zyntharo_command_that_does_not_exist", timeout=15)
         self.assertEqual(result.exit_code, 127)
         self.assertIn("unknown command", result.failure_signals)
         self.assertTrue(result.verified)
@@ -195,11 +195,11 @@ class LiveSessionTests(unittest.TestCase):
 class ActionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.engine = TerminalEngine(home=tempfile.mkdtemp(), buffer_lines=2000)
-        term_actions = __import__("orbynth.actions.terminal", fromlist=["set_engine"])
+        term_actions = __import__("zyntharo.actions.terminal", fromlist=["set_engine"])
         term_actions.set_engine(self.engine)
         self.addCleanup(self.engine.close_all)
         self.addCleanup(term_actions.set_engine, None)
-        from orbynth.actions import terminal as module
+        from zyntharo.actions import terminal as module
 
         self.registry = ActionRegistry()
         self.registry.register_all(module.all_actions())

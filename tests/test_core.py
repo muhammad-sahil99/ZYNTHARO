@@ -9,9 +9,9 @@ import time
 import unittest
 
 from tests.helpers import Stack, make_config
-from orbynth.config import CAPABILITIES, AppConfig, ProviderConfig, ModelSpec, expand_capabilities
-from orbynth.events import Event, EventBus, LOG
-from orbynth.memory import MemoryStore
+from zyntharo.config import CAPABILITIES, AppConfig, ProviderConfig, ModelSpec, expand_capabilities
+from zyntharo.events import Event, EventBus, LOG
+from zyntharo.memory import MemoryStore
 
 
 class ConfigTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class ConfigTests(unittest.TestCase):
     def test_round_trip_preserves_providers_and_roster(self):
         with tempfile.TemporaryDirectory() as home:
             config = make_config(home)
-            config.roster.append(__import__("orbynth.config", fromlist=["AgentConfig"]).AgentConfig(name="X", role="operative"))
+            config.roster.append(__import__("zyntharo.config", fromlist=["AgentConfig"]).AgentConfig(name="X", role="operative"))
             path = config.save()
             reloaded = AppConfig.from_json(json.loads(open(path).read()))
             self.assertEqual(reloaded.providers[0].name, "echo")

@@ -8,9 +8,9 @@ import tempfile
 import unittest
 
 from tests.helpers import Stack
-from orbynth.config import AppConfig, ModelSpec, ProviderConfig, Secrets
-from orbynth.events import MODEL_FALLBACK, PROVIDER_ERROR, QUOTA_EXHAUSTED, EventBus
-from orbynth.llm.providers import (
+from zyntharo.config import AppConfig, ModelSpec, ProviderConfig, Secrets
+from zyntharo.events import MODEL_FALLBACK, PROVIDER_ERROR, QUOTA_EXHAUSTED, EventBus
+from zyntharo.llm.providers import (
     LLMRequest,
     Message,
     ProviderError,
@@ -18,9 +18,9 @@ from orbynth.llm.providers import (
     TransportResponse,
     classify_status,
 )
-from orbynth.llm.quotas import QuotaManager
-from orbynth.llm.runtime import AllModelsUnavailable, ModelRuntime, Requirements
-from orbynth.memory import MemoryStore
+from zyntharo.llm.quotas import QuotaManager
+from zyntharo.llm.runtime import AllModelsUnavailable, ModelRuntime, Requirements
+from zyntharo.memory import MemoryStore
 
 
 class FakeTransport:
@@ -257,7 +257,7 @@ class TransportUnavailableTests(unittest.TestCase):
                     name="openai",
                     kind="openai_compatible",
                     base_url="https://api.openai.com/v1",
-                    api_key_env="ORBYNTH_TEST_UNSET_KEY",
+                    api_key_env="ZYNTHARO_TEST_UNSET_KEY",
                     models=[ModelSpec(model_id="gpt-x")],
                 )
             ],

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://orbynth.local/contracts/records.schema.json",
-  "title": "ORBYNTH record contracts",
-  "description": "The records ORBYNTH writes about itself: what it intended, what it did, what proved it, and what it was asked for. This file is the contract; orbynth/ops/* and orbynth/memory.py are the implementations, and tests/test_contracts.py validates real objects produced by the running system against these definitions. Change a schema and you have changed the format stored on disk, so the change also needs a version bump in contracts/versions.json and a migration note.",
+  "$id": "https://zyntharo.local/contracts/records.schema.json",
+  "title": "ZYNTHARO record contracts",
+  "description": "The records ZYNTHARO writes about itself: what it intended, what it did, what proved it, and what it was asked for. This file is the contract; zyntharo/ops/* and zyntharo/memory.py are the implementations, and tests/test_contracts.py validates real objects produced by the running system against these definitions. Change a schema and you have changed the format stored on disk, so the change also needs a version bump in contracts/versions.json and a migration note.",
   "$defs": {
     "receipt": {
       "title": "Evidence receipt (spec 4.2)",

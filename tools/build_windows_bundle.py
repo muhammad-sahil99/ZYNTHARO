@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build ORBYNTH's Windows application payload for an installer.
+"""Build ZYNTHARO's Windows application payload for an installer.
 
 This script is deliberately strict. It makes the payload that a signed WiX/Inno/MSIX installer
 will install, but it does not claim a successful installer until native helpers, the WhatsApp
@@ -22,7 +22,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist" / "windows"
 REQUIRED_PAYLOAD = (
-    "ORBYNTH.exe", "hud", "sidecars/whatsapp/sidecar.js", "sidecars/whatsapp/package.json",
+    "ZYNTHARO.exe", "hud", "sidecars/whatsapp/sidecar.js", "sidecars/whatsapp/package.json",
     "node/node.exe", "ms-playwright",
 )
 
@@ -69,8 +69,8 @@ def write_manifest(payload: Path) -> Path:
     for path in sorted(p for p in payload.rglob("*") if p.is_file()):
         files.append({"path": path.relative_to(payload).as_posix(), "bytes": path.stat().st_size, "sha256": _sha256(path)})
     manifest = {
-        "product": "ORBYNTH",
-        "version": (ROOT / "orbynth" / "__init__.py").read_text(encoding="utf-8").split('__version__ = "')[1].split('"')[0],
+        "product": "ZYNTHARO",
+        "version": (ROOT / "zyntharo" / "__init__.py").read_text(encoding="utf-8").split('__version__ = "')[1].split('"')[0],
         "platform": "windows",
         "files": files,
         "installer_note": "This payload must be code-signed and installed by a signed Windows installer.",
@@ -93,19 +93,19 @@ def build(output: Path) -> int:
         shutil.rmtree(output)
     output.mkdir(parents=True)
     command = [
-        "pyinstaller", "--noconfirm", "--clean", "--onedir", "--windowed", "--name", "ORBYNTH",
+        "pyinstaller", "--noconfirm", "--clean", "--onedir", "--windowed", "--name", "ZYNTHARO",
         "--add-data", f"{ROOT / 'hud'}{os.pathsep}hud",
         "--add-data", f"{ROOT / 'sidecars'}{os.pathsep}sidecars",
         "--add-binary", f"{ROOT / 'vendor' / 'node' / 'node.exe'}{os.pathsep}node/node.exe",
         "--add-data", f"{chromium_dir}{os.pathsep}ms-playwright",
-        "--collect-submodules", "orbynth",
-        str(ROOT / "orbynth" / "desktop.py"),
+        "--collect-submodules", "zyntharo",
+        str(ROOT / "zyntharo" / "desktop.py"),
         "--distpath", str(output), "--workpath", str(ROOT / "build" / "pyinstaller"),
     ]
     result = subprocess.run(command, cwd=ROOT, check=False)
     if result.returncode:
         return result.returncode
-    payload = output / "ORBYNTH"
+    payload = output / "ZYNTHARO"
     manifest = write_manifest(payload)
     missing = validate_payload(payload)
     if missing:
@@ -118,7 +118,7 @@ def build(output: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build ORBYNTH's complete Windows application payload.")
+    parser = argparse.ArgumentParser(description="Build ZYNTHARO's complete Windows application payload.")
     parser.add_argument("--output", type=Path, default=DIST)
     parser.add_argument("--check", action="store_true", help="validate bundle inputs without building")
     args = parser.parse_args(argv)

@@ -12,7 +12,7 @@ import os
 import tempfile
 import unittest
 
-from orbynth.ops.schedule import Scheduler
+from zyntharo.ops.schedule import Scheduler
 
 
 class ScheduleTests(unittest.TestCase):
@@ -148,8 +148,8 @@ class ScheduleTests(unittest.TestCase):
 
 class ScheduleToolTests(unittest.TestCase):
     def setUp(self):
-        from orbynth.actions import schedule as tools
-        from orbynth.ops.lessons import LessonBook
+        from zyntharo.actions import schedule as tools
+        from zyntharo.ops.lessons import LessonBook
         from tests.helpers import Stack
 
         self.tmp = tempfile.TemporaryDirectory()

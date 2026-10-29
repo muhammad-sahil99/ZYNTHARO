@@ -18,10 +18,10 @@ import os
 import tempfile
 import unittest
 
-from orbynth.config import AppConfig, ProviderConfig, ModelSpec
-from orbynth.events import MODEL_LIMITS, MODEL_RESERVE, EventBus
-from orbynth.llm.quotas import QuotaManager
-from orbynth.llm.reserve import ModelLimits, ReservePool
+from zyntharo.config import AppConfig, ProviderConfig, ModelSpec
+from zyntharo.events import MODEL_LIMITS, MODEL_RESERVE, EventBus
+from zyntharo.llm.quotas import QuotaManager
+from zyntharo.llm.reserve import ModelLimits, ReservePool
 
 
 def _config(home: str) -> AppConfig:

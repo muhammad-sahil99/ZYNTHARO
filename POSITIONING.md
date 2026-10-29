@@ -16,7 +16,7 @@ CAPTCHA blocks, frozen pages and results that were incomplete without saying so.
 [technologyreview.com](https://www.technologyreview.com/2025/03/11/1113133/manus-ai-review/))
 
 **What we sell instead.** Every action carries evidence, every task has written success criteria, and
-a separate verifier checks the outcome rather than the steps (`orbynth/ops/verification.py`,
+a separate verifier checks the outcome rather than the steps (`zyntharo/ops/verification.py`,
 `ops/preflight.py`, `ops/journal.py`). A blocked step becomes a named handoff — "MFA required on this
 account, here is the screen" — not a silent retry. This is already the product's core; the new
 connectors extend it to mail and drives, where a failed send is visible in one place.
@@ -45,7 +45,7 @@ files by tunnelling back to a desktop app.
 ([Google restricted scopes](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification),
 [ChatGPT Computer Use](https://learn.chatgpt.com/docs/computer-use))
 
-**What we sell instead.** ORBYNTH runs on the customer's machine. Mail is read over IMAP locally, or
+**What we sell instead.** ZYNTHARO runs on the customer's machine. Mail is read over IMAP locally, or
 over the Gmail/Graph API from the local process; no mail content travels through a vendor server. That
 is a compliance argument a small legal practice or clinic can actually accept, and it is why the
 connector design uses the customer's own credentials instead of a hosted relay.
@@ -83,6 +83,6 @@ the reason, because the first customer who discovers a claim was marketing is th
 
 ## The one-line pitch this supports
 
-> ORBYNTH does three office jobs on your own Windows PC — invoices, replies, reports — using the
+> ZYNTHARO does three office jobs on your own Windows PC — invoices, replies, reports — using the
 > accounts you already have, with every action verified, every irreversible step approved by you, and
 > nothing sent to a vendor's cloud.

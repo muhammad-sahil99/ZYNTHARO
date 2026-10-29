@@ -29,8 +29,8 @@ MATRIX_JSON = ROOT / "artifacts" / "capabilities.json"
 
 def build(root: Path = ROOT, platform: str | None = None, stats: object | None = None):
     """The matrix for this repository, wired to the real stores when they exist."""
-    from orbynth.actions import build_registry
-    from orbynth.ops.capability import (
+    from zyntharo.actions import build_registry
+    from zyntharo.ops.capability import (
         DECLARED_ONLY,
         CapabilityMatrix,
         ChainedRunStats,
@@ -47,7 +47,7 @@ def build(root: Path = ROOT, platform: str | None = None, stats: object | None =
     sources: list[object] = []
     journal_path = root / "artifacts" / "capability_journal.db"
     if journal_path.exists():
-        from orbynth.ops.journal import Journal
+        from zyntharo.ops.journal import Journal
 
         try:
             sources.append(JournalRunStats(Journal(journal_path)))
@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    from orbynth.ops.capability import current_platform
+    from zyntharo.ops.capability import current_platform
 
     matrix = build(platform=current_platform() if args.machine else None)
     doc = matrix.markdown()

@@ -12,9 +12,9 @@ import os
 import tempfile
 import unittest
 
-from orbynth.actions import fleet
-from orbynth.agents.comms import AgentComms
-from orbynth.llm.reserve import ReservePool
+from zyntharo.actions import fleet
+from zyntharo.agents.comms import AgentComms
+from zyntharo.llm.reserve import ReservePool
 from tests.helpers import Stack
 
 

@@ -1,5 +1,5 @@
 {
-  "generated_from": "orbynth/events.py",
+  "generated_from": "zyntharo/events.py",
   "handler_file": "hud/app.js",
   "topics": [
     "action.confirm",

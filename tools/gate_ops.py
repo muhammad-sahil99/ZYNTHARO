@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 
 
 def _temp_home() -> str:
-    return tempfile.mkdtemp(prefix="orbynth-gate-")
+    return tempfile.mkdtemp(prefix="zyntharo-gate-")
 
 
 def _stack(home: str) -> Any:
@@ -38,11 +38,11 @@ def op_m0_slice(root: Path) -> tuple[bool, str]:
     stack = _stack(home)
     try:
         target = str(Path(home) / "m0.txt")
-        write = stack.tool("fs_write", path=target, content="ORBYNTH M0")
+        write = stack.tool("fs_write", path=target, content="ZYNTHARO M0")
         if not write.ok:
             return False, f"write failed: {write.error}"
         read = stack.tool("fs_read", path=target)
-        if not read.ok or "ORBYNTH M0" not in str(read.output):
+        if not read.ok or "ZYNTHARO M0" not in str(read.output):
             return False, f"read-back mismatch: {read.output!r}"
         topics = {event.topic for event in stack.events}
         if "action.result" not in topics:
@@ -95,7 +95,7 @@ def op_plugin_lifecycle(root: Path) -> tuple[bool, str]:
 
 def op_supervisor_cleanup(root: Path) -> tuple[bool, str]:
     """A supervised helper dies with its supervisor, and the journal reconciles afterwards."""
-    from orbynth.ops.supervisor import RUNNING, Supervisor
+    from zyntharo.ops.supervisor import RUNNING, Supervisor
 
     home = _temp_home()
     first = Supervisor(home, poll_interval=0.05)
@@ -118,7 +118,7 @@ def op_supervisor_cleanup(root: Path) -> tuple[bool, str]:
 
 def op_owner_gate(root: Path) -> tuple[bool, str]:
     """Risky work needs the owner: no PIN, no permission; a voice session is not enough."""
-    from orbynth.ops.owner import OwnerRegistry
+    from zyntharo.ops.owner import OwnerRegistry
 
     home = _temp_home()
     owner = OwnerRegistry(home)
@@ -151,8 +151,8 @@ def op_owner_gate(root: Path) -> tuple[bool, str]:
 
 def op_catalog_rollback(root: Path) -> tuple[bool, str]:
     """A catalog applies only when idle, retires dead model IDs, and rolls back cleanly."""
-    from orbynth.config import default_config, load_config
-    from orbynth.ops.catalog import ACTIVE, RETIRED, CatalogEntry, ModelCatalog, UpdateGate
+    from zyntharo.config import default_config, load_config
+    from zyntharo.ops.catalog import ACTIVE, RETIRED, CatalogEntry, ModelCatalog, UpdateGate
 
     home = _temp_home()
     config = default_config()
@@ -187,7 +187,7 @@ def op_catalog_rollback(root: Path) -> tuple[bool, str]:
 
 def op_language_rtl(root: Path) -> tuple[bool, str]:
     """Urdu and Arabic interfaces: direction, detection, digits and OCR packs."""
-    from orbynth.ops.languages import detect, direction_of, equivalent, normalize, ocr_languages, profile_for
+    from zyntharo.ops.languages import detect, direction_of, equivalent, normalize, ocr_languages, profile_for
 
     urdu = "رپورٹ محفوظ کریں"
     if direction_of(urdu) != "rtl" or direction_of("حفظ التقرير") != "rtl":
@@ -209,7 +209,7 @@ def op_language_rtl(root: Path) -> tuple[bool, str]:
 
 def op_risk_tiers(root: Path) -> tuple[bool, str]:
     """Harmless work is batched; irreversible work is never shortcut."""
-    from orbynth.ops.verification import NEVER_SHORTCUT
+    from zyntharo.ops.verification import NEVER_SHORTCUT
 
     home = _temp_home()
     stack = _stack(home)
@@ -231,7 +231,7 @@ def op_risk_tiers(root: Path) -> tuple[bool, str]:
 
 def op_preflight(root: Path) -> tuple[bool, str]:
     """A locked screen defers desktop work instead of pretending to run it."""
-    from orbynth.ops.preflight import DEFER, RUN_ISOLATED, SKIP, MachineState, Preflight, TaskRequirements
+    from zyntharo.ops.preflight import DEFER, RUN_ISOLATED, SKIP, MachineState, Preflight, TaskRequirements
 
     preflight = Preflight()
     gui_task = TaskRequirements(gui=True, unlocked_session=True, isolation_ok=True)
@@ -255,8 +255,8 @@ def op_preflight(root: Path) -> tuple[bool, str]:
 
 def op_billing_modes(root: Path) -> tuple[bool, str]:
     """A hosted gateway refuses to arm itself without legal review and abuse caps."""
-    from orbynth.config import default_config
-    from orbynth.ops.billing import BYOK, GATEWAY, BillingGate, GatewayPolicy
+    from zyntharo.config import default_config
+    from zyntharo.ops.billing import BYOK, GATEWAY, BillingGate, GatewayPolicy
 
     config = default_config()
     bare = BillingGate(GATEWAY, GatewayPolicy(endpoint="https://gateway.example/v1"))
@@ -287,7 +287,7 @@ def op_billing_modes(root: Path) -> tuple[bool, str]:
 
 def op_governor(root: Path) -> tuple[bool, str]:
     """Background work yields during a game; work the user asked for never does."""
-    from orbynth.ops.governor import BACKGROUND, CRITICAL, GAME, BusySignal, ResponsivenessGovernor
+    from zyntharo.ops.governor import BACKGROUND, CRITICAL, GAME, BusySignal, ResponsivenessGovernor
 
     governor = ResponsivenessGovernor(detector=lambda: [])
     state = governor.evaluate([BusySignal(GAME, "valorant", 0.9)])
@@ -308,9 +308,9 @@ def op_journal(root: Path) -> tuple[bool, str]:
     """Exactly-once, reconciliation after an interruption, and undo — through the real registry."""
     home = _temp_home()
     stack = _stack(home)
-    from orbynth.actions.registry import ActionContext
-    from orbynth.config import expand_capabilities
-    from orbynth.ops.journal import Intent, Journal
+    from zyntharo.actions.registry import ActionContext
+    from zyntharo.config import expand_capabilities
+    from zyntharo.ops.journal import Intent, Journal
 
     journal = Journal(Path(home) / "journal.db", stack.bus)
     stack.actions.journal = journal
@@ -389,7 +389,7 @@ def op_hud_coverage(root: Path) -> tuple[bool, str]:
     The ops layer shipped once with no HUD wiring at all, so the app looked calm while
     processes were terminated and model catalogues applied. This is the check that stops a
     repeat, and it also fails on a stale committed coverage file or a topic written as a
-    bare string instead of an orbynth/events.py constant.
+    bare string instead of an zyntharo/events.py constant.
     """
     from tools.hud_coverage import COVERAGE, report
 
@@ -414,7 +414,7 @@ def op_office_tier_b(root: Path) -> tuple[bool, str]:
     """Word, Excel and CSV files really written and read back without Office installed (9.7)."""
     import tempfile
 
-    from orbynth.ops import docengine
+    from zyntharo.ops import docengine
 
     home = Path(tempfile.mkdtemp())
     docx = home / "gate.docx"
@@ -461,7 +461,7 @@ def op_office_tier_b(root: Path) -> tuple[bool, str]:
 
 def op_terminal_engine(root: Path) -> tuple[bool, str]:
     """Sessions, risk classification and echo verification, checked against a real shell (9.5)."""
-    from orbynth.ops import terminal as term
+    from zyntharo.ops import terminal as term
 
     # Classification is deterministic, so it is checked exactly: a downgrade bug here would
     # run ``echo $(curl | sh)`` as if it were a read.
@@ -494,7 +494,7 @@ def op_terminal_engine(root: Path) -> tuple[bool, str]:
             return False, f"the typed line was not read back: {result.verification}"
         if not session.supports_tty:
             return False, "this machine gave no pty, so echo verification and interactive work are unverified"
-        bad = session.run("orbynth_gate_missing_command", timeout=20)
+        bad = session.run("zyntharo_gate_missing_command", timeout=20)
         if bad.exit_code not in (127, 1, 9009):
             return False, f"a nonexistent command reported exit {bad.exit_code}"
         if not bad.failure_signals:
@@ -511,9 +511,9 @@ def op_terminal_engine(root: Path) -> tuple[bool, str]:
 
 def op_contracts(root: Path) -> tuple[bool, str]:
     """Schemas, versions and generated bindings agree, and real records satisfy them (3.4)."""
-    from orbynth.actions.registry import ActionContext, ActionResult, ActionRegistry, Action
-    from orbynth.contracts import audit, validate
-    from orbynth.ops.receipt import Receipt
+    from zyntharo.actions.registry import ActionContext, ActionResult, ActionRegistry, Action
+    from zyntharo.contracts import audit, validate
+    from zyntharo.ops.receipt import Receipt
     from tools.contracts import CS_TARGET, PY_TARGET, TS_TARGET, build
 
     report = audit()
@@ -527,7 +527,7 @@ def op_contracts(root: Path) -> tuple[bool, str]:
 
     # A live tool row must satisfy the tool contract: the catalogue is the interface models
     # call, so a row that does not validate is a tool nobody can use correctly.
-    from orbynth.actions import build_registry
+    from zyntharo.actions import build_registry
 
     live = build_registry(capabilities=False)
     checked = 0
@@ -606,7 +606,7 @@ def op_hardware_sensors(root: Path) -> tuple[bool, str]:
     fire an alert, an alert must close when the condition ends, and loosening a threshold must
     need the owner. Anything less and the sensor panel is decoration.
     """
-    from orbynth.ops.sensors import DEFAULT_RULES, ProtectionPolicy, Reading, SensorMonitor
+    from zyntharo.ops.sensors import DEFAULT_RULES, ProtectionPolicy, Reading, SensorMonitor
 
     class Source:
         def __init__(self, readings):
@@ -617,7 +617,7 @@ def op_hardware_sensors(root: Path) -> tuple[bool, str]:
             return [Reading(**reading) for reading in self.readings]
 
         def filter(self, readings, previous=None):
-            from orbynth.ops.sensors import Collector
+            from zyntharo.ops.sensors import Collector
 
             return Collector(sources=()).filter(readings, previous)
 
@@ -675,9 +675,9 @@ def op_local_index(root: Path) -> tuple[bool, str]:
     import shutil
     import tempfile
 
-    from orbynth.ops.index import SearchIndex
+    from zyntharo.ops.index import SearchIndex
 
-    home = Path(tempfile.mkdtemp(prefix="orbynth-index-"))
+    home = Path(tempfile.mkdtemp(prefix="zyntharo-index-"))
     corpus = home / "docs"
     (corpus / "node_modules").mkdir(parents=True)
     (corpus / "notes.md").write_text("# Pump Log\n\nthe coolant pump vibrates at low rpm\n", encoding="utf-8")

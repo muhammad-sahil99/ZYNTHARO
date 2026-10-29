@@ -1,4 +1,4 @@
-/* ORBYNTH instrument chrome — canvas 2D.
+/* ZYNTHARO instrument chrome — canvas 2D.
  *
  * The frame around the core, drawn as an instrument rather than as decoration:
  *

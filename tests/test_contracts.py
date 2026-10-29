@@ -16,16 +16,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-from orbynth import contracts
-from orbynth.actions import build_registry
-from orbynth.actions.registry import ActionContext, ActionRegistry, ActionResult, action
-from orbynth.contracts import compat
-from orbynth.events import Event, EventBus
-from orbynth.memory import MemoryStore
-from orbynth.ops.journal import Journal
-from orbynth.ops.receipt import FAILED, UNVERIFIED, VERIFIED, Receipt, channels_in
-from orbynth.ops.verification import SuccessCriterion, TaskContract
-from orbynth.plugins.loader import PluginManifest
+from zyntharo import contracts
+from zyntharo.actions import build_registry
+from zyntharo.actions.registry import ActionContext, ActionRegistry, ActionResult, action
+from zyntharo.contracts import compat
+from zyntharo.events import Event, EventBus
+from zyntharo.memory import MemoryStore
+from zyntharo.ops.journal import Journal
+from zyntharo.ops.receipt import FAILED, UNVERIFIED, VERIFIED, Receipt, channels_in
+from zyntharo.ops.verification import SuccessCriterion, TaskContract
+from zyntharo.plugins.loader import PluginManifest
 
 
 @action("contract_probe", "A probe used only by the contract tests.", "filesystem.read", {}, group="filesystem")
@@ -102,7 +102,7 @@ class LiveObjectTests(unittest.TestCase):
     def test_a_real_receipt_satisfies_the_receipt_contract(self) -> None:
         reg = registry()
         reg.register(
-            __import__("orbynth.actions.registry", fromlist=["Action"]).Action(
+            __import__("zyntharo.actions.registry", fromlist=["Action"]).Action(
                 name="contract_writer",
                 description="Writes with a read-back channel.",
                 capability="filesystem.read",
@@ -130,7 +130,7 @@ class LiveObjectTests(unittest.TestCase):
         reg = registry()
         reg.memory = store
         reg.register(
-            __import__("orbynth.actions.registry", fromlist=["Action"]).Action(
+            __import__("zyntharo.actions.registry", fromlist=["Action"]).Action(
                 name="contract_noop",
                 description="Returns success without evidence.",
                 capability="filesystem.read",
@@ -154,7 +154,7 @@ class LiveObjectTests(unittest.TestCase):
         reg = registry()
         reg.journal = journal
         reg.register(
-            __import__("orbynth.actions.registry", fromlist=["Action"]).Action(
+            __import__("zyntharo.actions.registry", fromlist=["Action"]).Action(
                 name="contract_write",
                 description="Writes a file.",
                 capability="filesystem.write",
@@ -201,7 +201,7 @@ class ValidatorTests(unittest.TestCase):
         self.assertTrue(contracts.validate("event", pattern).errors)
 
     def test_an_unsupported_keyword_is_refused_not_ignored(self) -> None:
-        from orbynth.contracts.validator import validate
+        from zyntharo.contracts.validator import validate
 
         schema = {"type": "object", "properties": {"a": {"type": "string", "format": "email"}}}
         with self.assertRaises(ValueError):
@@ -211,7 +211,7 @@ class ValidatorTests(unittest.TestCase):
         bundle = contracts.load_bundle("records.schema.json")
         contract = TaskContract(task_id="t2", request="x")
         contract.add("file_exists", target="/tmp/x")
-        from orbynth.contracts.validator import validate
+        from zyntharo.contracts.validator import validate
 
         result = validate(
             contract.to_json(),
@@ -245,7 +245,7 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(decisions["telepathy"], compat.REFUSE)
 
     def test_plugin_validation_uses_the_contract_versions(self) -> None:
-        from orbynth.plugins.loader import PluginHost
+        from zyntharo.plugins.loader import PluginHost
 
         home = Path(tempfile.mkdtemp())
         plugin_dir = home / "plugins" / "bad_target"
@@ -282,7 +282,7 @@ class GeneratedBindingsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_the_python_bindings_round_trip(self) -> None:
-        from orbynth.contracts.generated import Receipt as GeneratedReceipt
+        from zyntharo.contracts.generated import Receipt as GeneratedReceipt
 
         data = {
             "receipt_id": "abc123",

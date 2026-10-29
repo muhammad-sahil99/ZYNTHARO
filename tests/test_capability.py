@@ -18,8 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-from orbynth.actions.registry import ActionContext, ActionRegistry, action
-from orbynth.ops.capability import (
+from zyntharo.actions.registry import ActionContext, ActionRegistry, action
+from zyntharo.ops.capability import (
     GREEN,
     LOCAL_DRIVER_MISSING,
     LOCAL_WRONG_PLATFORM,

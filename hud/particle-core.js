@@ -1,4 +1,4 @@
-/* ORBYNTH particle core — hand-written WebGL, no dependencies.
+/* ZYNTHARO particle core — hand-written WebGL, no dependencies.
  *
  * One instrument, four bodies, all drawn in a real perspective camera (no fake depth):
  *
@@ -282,7 +282,7 @@
         this.ok = true;
       } catch (error) {
         this.error = error;
-        console.warn("[orbynth] particle core unavailable:", error.message);
+        console.warn("[zyntharo] particle core unavailable:", error.message);
       }
     }
 

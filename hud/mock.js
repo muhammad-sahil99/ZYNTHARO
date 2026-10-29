@@ -1,6 +1,6 @@
-/* ORBYNTH demo data.
+/* ZYNTHARO demo data.
  *
- * The interface is driven entirely by bridge frames. When no ORBYNTH core is running — for
+ * The interface is driven entirely by bridge frames. When no ZYNTHARO core is running — for
  * example in a hosted preview, where no desktop exists to automate — this module replays a
  * realistic snapshot and a rolling event stream so the HUD can be inspected and judged on its
  * own. It is labelled "DEMO DATA" in the interface and is never silently substituted for a
@@ -42,18 +42,18 @@
 
   function snapshot() {
     return {
-      product: "ORBYNTH",
+      product: "ZYNTHARO Beta",
       alternate_brand: "SYNOVARIS",
       tagline: "desktop operative · vision · input · browser · files · office · self-extending",
       version: "0.1.0",
       demo: true,
       server_time: now(),
       config: {
-        home: "~/Library/Application Support/ORBYNTH",
-        theme: "orbynth-core",
+        home: "~/Library/Application Support/ZYNTHARO",
+        theme: "zyntharo-core",
         particle_budget: 6000,
         wires: true,
-        voice: { enabled: true, wake_words: ["orbynth", "orb"], stt: "faster-whisper", tts: "edge-tts", tts_voice: "en-US-AriaNeural", barge_in: true },
+        voice: { enabled: true, wake_words: ["zyntharo", "orb"], stt: "faster-whisper", tts: "edge-tts", tts_voice: "en-US-AriaNeural", barge_in: true },
         safety: { confirm_capabilities: ["filesystem.delete", "office.macro", "browser.eval", "shell.exec", "plugin.install", "whatsapp.call"], max_parallel_agents: 8, allow_network: true },
       },
       models: [
@@ -102,7 +102,7 @@
       ],
       preflight: [{ action: "defer", reasons: ["machine busy: video_call"], advice: "desktop work waits while the user is in a call", at: now() - 120 }],
       security: { configured: true, owner: "Owner", machine_kind: "personal", os_user: "owner-pc", foreign_profile: false, voice_prints: 2, recovery_available: true, session_valid: true, session_remaining_s: 1400, locked_out: false, irreversible_needs: "pin" },
-      updates: { mode: "byok", catalog_path: "/home/orbynth/catalog.json", catalog_version: "2026.10", applied: "2026.10 (ed25519)", drift: "2 configured id(s) no longer served", armable: true, billing_issues: [], requests_today: 212, spend_today_usd: 0 },
+      updates: { mode: "byok", catalog_path: "/home/zyntharo/catalog.json", catalog_version: "2026.10", applied: "2026.10 (ed25519)", drift: "2 configured id(s) no longer served", armable: true, billing_issues: [], requests_today: 212, spend_today_usd: 0 },
       machine: { session_locked: false, display_attached: true, on_ac: true, battery_pct: 88, network: true, audio_device: true, idle_seconds: 4, busy_reason: "video_call: teams", priority: "below_normal", paused: { background: true, maintenance: true }, languages: "en, ur (ocr: eng+urd)", language_dir: "ltr" },
       hardware: {
         attached: true, worst: "clear", ts: now(), active_alerts: [], suspect: [],
@@ -163,7 +163,7 @@
           { key: "gmail", title: "Gmail / Google Workspace", imap: "imap.gmail.com:993", smtp: "smtp.gmail.com:587", note: "Create an App Password at myaccount.google.com → Security.", supported_here: true },
           { key: "outlook", title: "Outlook / Microsoft 365", imap: "", smtp: "", note: "Microsoft disabled password sign-in; use the Microsoft 365 connector.", supported_here: false },
         ],
-        vault: { path: "C:/Users/Owner/AppData/Roaming/ORBYNTH/connectors.vault.json", at_rest_protected: true, note: "encrypted with Windows DPAPI, bound to this Windows account" },
+        vault: { path: "C:/Users/Owner/AppData/Roaming/ZYNTHARO/connectors.vault.json", at_rest_protected: true, note: "encrypted with Windows DPAPI, bound to this Windows account" },
         connected: [{ name: "mail", keys: ["address", "password"], account: "owner@example.com" }, { name: "slack", keys: ["token"], account: "acme" }],
         signin_profiles: {
           google: [
@@ -208,7 +208,7 @@
     (t) => ({ type: "event", topic: "voice.language", event: { topic: "voice.language", source: "voice", severity: "notice", payload: { detected: "ur", configured: "en", text: "رپورٹ محفوظ کریں" }, ts: t } }),
     (t) => ({ type: "event", topic: "owner.denied", event: { topic: "owner.denied", source: "owner", severity: "warning", payload: { reason: "bad PIN", locked_out: false }, ts: t } }),
     (t) => ({ type: "event", topic: "voice.speaking", event: { topic: "voice.speaking", source: "voice", severity: "info", payload: { text: "Three invoices are past due — flagging them in the summary sheet." }, ts: t } }),
-    (t) => ({ type: "event", topic: "voice.listening", event: { topic: "voice.listening", source: "voice", severity: "info", payload: { wake: "orbynth" }, ts: t } }),
+    (t) => ({ type: "event", topic: "voice.listening", event: { topic: "voice.listening", source: "voice", severity: "info", payload: { wake: "zyntharo" }, ts: t } }),
     (t) => ({ type: "event", topic: "agent.message", event: { topic: "agent.message", source: "scr-3", severity: "info", payload: { to: "for-1", preview: "Excel lock released, reconciling", agent: "Scrivener" }, ts: t } }),
     (t) => ({ type: "event", topic: "task.assigned", event: { topic: "task.assigned", source: "for-1", severity: "info", payload: { agent: "Cartographer", task: "verify 13 remaining downloads" }, ts: t } }),
   ];
@@ -248,7 +248,7 @@
         try {
           emit(factory(now()));
         } catch (error) {
-          console.warn("[orbynth] mock emit failed", error);
+          console.warn("[zyntharo] mock emit failed", error);
         }
         if (index % 9 === 3) {
           emit({ type: "scene", kind: "chart", title: "Invoice status by month", payload: { series: [{ label: "filed", value: 28 }, { label: "pending", value: 13 }] }, ts: now() });

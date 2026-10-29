@@ -24,7 +24,7 @@ the HUD instead of pretending.
 | need | used for | without it |
 |---|---|---|
 | Provider API keys (Gemini/OpenAI/Anthropic/…) | real model calls | the app runs against the offline `echo` provider only |
-| A Telegram bot token (`ORBYNTH_TELEGRAM_TOKEN`) | the reply desk over Telegram | the channel reports `needs_setup` with that instruction; nothing is sent |
+| A Telegram bot token (`ZYNTHARO_TELEGRAM_TOKEN`) | the reply desk over Telegram | the channel reports `needs_setup` with that instruction; nothing is sent |
 | One live account per connector you intend to sell (a Gmail/Workspace mailbox with an app password, a Microsoft 365 tenant app registration, a Slack workspace, a GitHub org, one CRM) | proving each connector against the real service | connectors stay `configured`/`needs_setup`; their request shapes are tested, but no live acceptance has been run |
 | A Google OAuth client (Desktop app type) in a test project | the Google connector's consent, refresh and quota behaviour | the Google connector stays `needs_setup` with the exact Cloud Console steps |
 | A WhatsApp account to pair, plus a second phone to test with | reply desk over WhatsApp, media and call acceptance | the channel stays unpaired and refuses instead of queueing messages |
@@ -49,8 +49,8 @@ the HUD instead of pretending.
 * **A virtual audio device** plus the WhatsApp sidecar for real-time voice calls.
 * **Provider quotas**: fill in each model's rpm/rpd/tpm so the Steward can manage failover
   instead of discovering a limit by hitting it.
-* **First run**: `orbynth owner setup` (PIN, voice samples, recovery code), then
-  `orbynth doctor` to see which drivers exist on this machine.
+* **First run**: `zyntharo owner setup` (PIN, voice samples, recovery code), then
+  `zyntharo doctor` to see which drivers exist on this machine.
 
 ## What you should never have to do
 

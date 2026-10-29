@@ -1,4 +1,4 @@
-/* ORBYNTH effects director — the layer that makes the plate behave like different machines.
+/* ZYNTHARO effects director — the layer that makes the plate behave like different machines.
 
    One console, many attitudes. The director watches the same events and counters everything else
    watches, decides which *situation* the system is in, and publishes one blended recipe that every
@@ -108,7 +108,7 @@
     breathe: { life: 3000, oneShot: false },
   };
 
-  /* Topic → situation. Every key is a topic the core really emits (see orbynth/events.py and
+  /* Topic → situation. Every key is a topic the core really emits (see zyntharo/events.py and
      hud/app.js), so the attitude on screen always corresponds to something that happened. */
   const TOPIC_SITUATIONS = {
     "voice.wake": "wake",

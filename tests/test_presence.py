@@ -14,8 +14,8 @@ import tempfile
 import unittest
 import wave
 
-from orbynth.actions import presence as tools
-from orbynth.ops.presence import (
+from zyntharo.actions import presence as tools
+from zyntharo.ops.presence import (
     ASK_OWNER,
     SILENT,
     SPEAK,
@@ -29,8 +29,8 @@ from orbynth.ops.presence import (
     VoiceView,
     looks_private,
 )
-from orbynth.vision.camera import CameraService, Detector, Face
-from orbynth.voice.speakers import SpeakerRegistry
+from zyntharo.vision.camera import CameraService, Detector, Face
+from zyntharo.voice.speakers import SpeakerRegistry
 from tests.helpers import Stack
 from tests.test_speakers import tone
 
@@ -159,8 +159,8 @@ class FusionTests(unittest.TestCase):
     def test_a_registered_owner_voice_is_reported_as_owner_speaking(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = SpeakerRegistry(tmp)
-            features = __import__("orbynth.voice.speakers", fromlist=["x"]).frame_features(tone(210.0))
-            from orbynth.voice.speakers import signature_from_frames
+            features = __import__("zyntharo.voice.speakers", fromlist=["x"]).frame_features(tone(210.0))
+            from zyntharo.voice.speakers import signature_from_frames
 
             registry.enroll("Owner", signature_from_frames(features), kind="owner")
             controller = PresenceController(registry, None)

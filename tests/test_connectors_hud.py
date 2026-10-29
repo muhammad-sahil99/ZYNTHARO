@@ -21,11 +21,11 @@ import time
 import unittest
 from unittest import mock
 
-from orbynth.connectors import base as cbase
-from orbynth.connectors.registry import ConnectorRegistry
-from orbynth.connectors.signin import DONE, FAILED, WAITING, SignInManager
-from orbynth.connectors.store import Vault
-from orbynth.hud.service import HudService
+from zyntharo.connectors import base as cbase
+from zyntharo.connectors.registry import ConnectorRegistry
+from zyntharo.connectors.signin import DONE, FAILED, WAITING, SignInManager
+from zyntharo.connectors.store import Vault
+from zyntharo.hud.service import HudService
 from tests.helpers import Stack
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -114,7 +114,7 @@ class HudConnectorCommandTests(unittest.TestCase):
 
     def test_the_snapshot_carries_accounts_without_making_a_network_call(self):
         """Painting the screen must never call a provider: statuses are local vault facts."""
-        with mock.patch("orbynth.connectors.transport.request_json") as transport:
+        with mock.patch("zyntharo.connectors.transport.request_json") as transport:
             snapshot = self.service.snapshot()["connectors"]
         transport.assert_not_called()
         self.assertTrue(snapshot["attached"])
@@ -139,7 +139,7 @@ class HudConnectorCommandTests(unittest.TestCase):
     def test_connecting_stores_the_value_and_reports_the_providers_refusal(self):
         """A stored string is not a working account: only the provider can say it works."""
         with mock.patch(
-            "orbynth.connectors.saas.request_json",
+            "zyntharo.connectors.saas.request_json",
             side_effect=cbase.ConnectorError("invalid_auth"),
         ):
             result = self.service.route(
@@ -239,7 +239,7 @@ class SignInSessionTests(unittest.TestCase):
         self.assertIn(started.stage, {"preparing", WAITING, DONE})
 
         with mock.patch(
-            "orbynth.connectors.microsoft.MicrosoftConnector.verify",
+            "zyntharo.connectors.microsoft.MicrosoftConnector.verify",
             autospec=True,
             side_effect=lambda self: self._ready("Microsoft 365 verified as me@example.com", "me@example.com"),
         ):
@@ -331,7 +331,7 @@ class SignInSessionTests(unittest.TestCase):
             # The mock has to be in place before the thread starts: the fake poll returns
             # instantly, so verification can happen before the first poll of this test.
             with mock.patch(
-                "orbynth.connectors.microsoft.MicrosoftConnector.verify",
+                "zyntharo.connectors.microsoft.MicrosoftConnector.verify",
                 autospec=True,
                 side_effect=lambda self: self._ready("verified", "me@example.com"),
             ):

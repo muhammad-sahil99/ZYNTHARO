@@ -11,18 +11,18 @@ import zipfile
 from unittest import mock
 
 from tests.helpers import Stack
-from orbynth.actions.browser import BrowserController, CDPController, TabInfo, set_controller
-from orbynth.actions.input_control import FocusGuard, RecordingBackend, WindowRef, set_backend, type_verified
-from orbynth.actions.registry import DriverUnavailable
-from orbynth.actions.whatsapp import set_backend as set_whatsapp_backend
+from zyntharo.actions.browser import BrowserController, CDPController, TabInfo, set_controller
+from zyntharo.actions.input_control import FocusGuard, RecordingBackend, WindowRef, set_backend, type_verified
+from zyntharo.actions.registry import DriverUnavailable
+from zyntharo.actions.whatsapp import set_backend as set_whatsapp_backend
 from tests.whatsapp_double import MockWhatsApp
-from orbynth.config import expand_capabilities
+from zyntharo.config import expand_capabilities
 
 
 class ActionTestCase(unittest.TestCase):
     def setUp(self):
         self.stack = Stack()
-        self.workdir = tempfile.mkdtemp(prefix="orbynth-work-")
+        self.workdir = tempfile.mkdtemp(prefix="zyntharo-work-")
 
     def tearDown(self):
         self.stack.close()
@@ -63,7 +63,7 @@ class RegistryGateTests(ActionTestCase):
         self.assertIn("signature", bad.evidence)
 
     def test_dry_run_never_touches_the_disk(self):
-        from orbynth.actions.registry import ActionContext
+        from zyntharo.actions.registry import ActionContext
 
         context = ActionContext(agent_id="t", capabilities=expand_capabilities(["*"]), memory=self.stack.memory, config=self.stack.config, dry_run=True)
         result = self.stack.actions.invoke("fs_write", context, path=self.path("never.txt"), content="x")
@@ -80,7 +80,7 @@ class RegistryGateTests(ActionTestCase):
         self.stack.config.safety.allowed_fs_roots = [self.workdir]
         inside = self.stack.tool("fs_write", path=self.path("ok.txt"), content="fine")
         self.assertTrue(inside.ok)
-        outside = self.stack.tool("fs_write", path=os.path.join(tempfile.gettempdir(), "orbynth-outside.txt"), content="no")
+        outside = self.stack.tool("fs_write", path=os.path.join(tempfile.gettempdir(), "zyntharo-outside.txt"), content="no")
         self.assertFalse(outside.ok)
         self.assertIn("outside allowed roots", outside.error)
 
@@ -104,7 +104,7 @@ class FilesystemTests(ActionTestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.output["replacements"], 1)
         self.assertIn("fast", open(target).read())
-        self.assertTrue(os.path.exists(target + ".orbynth-bak"))
+        self.assertTrue(os.path.exists(target + ".zyntharo-bak"))
 
     def test_edit_without_a_match_fails_loudly(self):
         target = self.path("cfg.ini")
@@ -302,7 +302,7 @@ class FakeBrowser(BrowserController):
     def click(self, target, by="css", nth=1):
         self.log.append(("click", target, by, nth))
         if target == "missing":
-            from orbynth.actions.registry import ActionFailed
+            from zyntharo.actions.registry import ActionFailed
 
             raise ActionFailed("no element matched", {"candidates": ["Sign in"]})
         return {"clicked": target, "by": by, "found": True, "point": [120, 300]}
@@ -424,7 +424,7 @@ class BrowserActionTests(ActionTestCase):
 
     def test_finder_scripts_search_shadow_roots_and_frames(self):
         """The regression this guards: a plain document.querySelector finds nothing in a modern app."""
-        from orbynth.actions.browser import _click_script, _type_script
+        from zyntharo.actions.browser import _click_script, _type_script
 
         click = _click_script("Sign in", "text", 1)
         self.assertIn("__deepQueryAll", click)
@@ -433,7 +433,7 @@ class BrowserActionTests(ActionTestCase):
         self.assertIn("cross_origin_frames", click)
         typed = _type_script("email", "me@example.com", "name", True)
         self.assertIn("__deepQueryAll", typed)
-        self.assertNotIn("document.querySelector(", typed.split("const __orbynthRoots")[-1])
+        self.assertNotIn("document.querySelector(", typed.split("const __zyntharoRoots")[-1])
 
     def test_act_verifies_the_expected_result(self):
         result = self.stack.tool("browser_act", capabilities=["browser.click"], target="Sign in", by="text", expect="#email")
@@ -450,7 +450,7 @@ class BrowserActionTests(ActionTestCase):
 
     def test_release_frees_the_controller_and_reports_it(self):
         """Quitting used to leave the managed browser and every tab alive."""
-        import orbynth.actions.browser as browser_module
+        import zyntharo.actions.browser as browser_module
 
         closed: list[str] = []
 
@@ -467,7 +467,7 @@ class BrowserActionTests(ActionTestCase):
         self.assertIsNone(browser_module._CONTROLLER, "a released controller must not stay cached")
 
     def test_release_without_a_browser_is_honest(self):
-        import orbynth.actions.browser as browser_module
+        import zyntharo.actions.browser as browser_module
 
         browser_module.set_controller(None)
         result = self.stack.tool("browser_release", capabilities=["browser.tabs"])
@@ -476,7 +476,7 @@ class BrowserActionTests(ActionTestCase):
         self.assertIn("no browser", result.output["reason"])
 
     def test_an_attached_user_browser_is_never_closed(self):
-        import orbynth.actions.browser as browser_module
+        import zyntharo.actions.browser as browser_module
 
         class Attached(CDPController):
             def __init__(self):
@@ -500,13 +500,13 @@ class WhatsAppTests(ActionTestCase):
         super().setUp()
         self.mock = MockWhatsApp()
         set_whatsapp_backend(self.mock)
-        import orbynth.actions.whatsapp as whatsapp
+        import zyntharo.actions.whatsapp as whatsapp
 
         whatsapp.ALLOW_LIST = {"Mom"}
 
     def tearDown(self):
         set_whatsapp_backend(None)
-        import orbynth.actions.whatsapp as whatsapp
+        import zyntharo.actions.whatsapp as whatsapp
 
         whatsapp.ALLOW_LIST = set()
         super().tearDown()
@@ -575,7 +575,7 @@ class WhatsAppTests(ActionTestCase):
 
     def _fake_bridge(self):
         """A bridge over a virtual loopback cable, with a voice that never touches a sound card."""
-        from orbynth.voice.callbridge import CallAudioBridge
+        from zyntharo.voice.callbridge import CallAudioBridge
 
         class FakeVoice:
             tier = "realtime"
@@ -627,14 +627,14 @@ class WhatsAppTests(ActionTestCase):
 
     def test_speaking_into_a_call_really_writes_audio_frames(self):
         """The bug this guards: the phrase was recorded in the result and never synthesised."""
-        import orbynth.actions.whatsapp as whatsapp
+        import zyntharo.actions.whatsapp as whatsapp
 
         bridge, audio = self._fake_bridge()
         self.assertEqual(bridge.route.kind, "virtual_cable")
         whatsapp.set_bridge(bridge)
         try:
             self.stack.tool("whatsapp_pair", capabilities=["whatsapp.pair"])
-            spoken = self.stack.tool("whatsapp_say", capabilities=["whatsapp.call"], text="hello, this is Orbynth")
+            spoken = self.stack.tool("whatsapp_say", capabilities=["whatsapp.call"], text="hello, this is Zyntharo")
             self.assertTrue(spoken.output["spoken"])
             self.assertGreater(spoken.output["frames"], 0)
             self.assertEqual(spoken.output["tier"], "realtime")
@@ -646,7 +646,7 @@ class WhatsAppTests(ActionTestCase):
             whatsapp.set_bridge(None)
 
     def test_placing_a_call_reports_the_audio_route_and_can_speak(self):
-        import orbynth.actions.whatsapp as whatsapp
+        import zyntharo.actions.whatsapp as whatsapp
 
         bridge, audio = self._fake_bridge()
         whatsapp.set_bridge(bridge)
@@ -662,7 +662,7 @@ class WhatsAppTests(ActionTestCase):
             whatsapp.set_bridge(None)
 
     def test_listening_returns_words_when_a_transcriber_is_wired(self):
-        import orbynth.actions.whatsapp as whatsapp
+        import zyntharo.actions.whatsapp as whatsapp
 
         bridge, _ = self._fake_bridge()
         whatsapp.set_bridge(bridge)
@@ -680,7 +680,7 @@ class WindowsDriverTests(unittest.TestCase):
     """Window actions against a scripted window list: no display, no OS window manager."""
 
     def setUp(self):
-        from orbynth.actions import windows
+        from zyntharo.actions import windows
 
         self.windows = windows
         self.stack = Stack()
@@ -748,7 +748,7 @@ class WindowsDriverTests(unittest.TestCase):
 
 class DpiAwarenessTests(unittest.TestCase):
     def test_probe_is_idempotent_and_explains_itself(self):
-        from orbynth.actions.input_control import ensure_dpi_awareness
+        from zyntharo.actions.input_control import ensure_dpi_awareness
 
         first = ensure_dpi_awareness()
         second = ensure_dpi_awareness()
@@ -762,8 +762,8 @@ class OfficeWriteVerificationTests(unittest.TestCase):
     """A save is only a save when a non-empty, changed file is on disk afterwards."""
 
     def test_missing_empty_and_unchanged_writes_are_all_failures(self):
-        from orbynth.actions.office import _verify_written
-        from orbynth.actions.registry import ActionFailed
+        from zyntharo.actions.office import _verify_written
+        from zyntharo.actions.registry import ActionFailed
 
         with tempfile.TemporaryDirectory() as tmp:
             target = os.path.join(tmp, "report.docx")
@@ -787,7 +787,7 @@ class OfficeWriteVerificationTests(unittest.TestCase):
             self.assertTrue(result["path"].endswith("report.docx"))
 
     def test_quiesce_suppresses_prompts_and_survives_a_locked_property(self):
-        from orbynth.actions.office import _quiesce
+        from zyntharo.actions.office import _quiesce
 
         class Locked:
             def __setattr__(self, name, value):
@@ -813,7 +813,7 @@ class WhatsAppSidecarContractTests(unittest.TestCase):
         return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def test_sidecar_exists_at_the_path_the_driver_resolves(self):
-        from orbynth.actions.whatsapp import SIDECAR_DIR
+        from zyntharo.actions.whatsapp import SIDECAR_DIR
 
         script = os.path.join(SIDECAR_DIR, "sidecar.js")
         self.assertTrue(os.path.exists(script), f"the driver launches {script} and it is missing")
@@ -822,7 +822,7 @@ class WhatsAppSidecarContractTests(unittest.TestCase):
     def test_every_rpc_method_the_client_calls_is_implemented(self):
         import re
 
-        client = open(os.path.join(self.root(), "orbynth", "actions", "whatsapp.py"), encoding="utf-8").read()
+        client = open(os.path.join(self.root(), "zyntharo", "actions", "whatsapp.py"), encoding="utf-8").read()
         sidecar = open(os.path.join(self.root(), "sidecars", "whatsapp", "sidecar.js"), encoding="utf-8").read()
         wanted = sorted(set(re.findall(r'call_rpc\("([a-z_]+)"', client)))
         self.assertTrue(wanted, "no RPC calls were found in the client at all")

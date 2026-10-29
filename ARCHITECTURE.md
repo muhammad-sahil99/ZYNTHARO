@@ -1,4 +1,4 @@
-# ORBYNTH — Architecture & Build Contract
+# ZYNTHARO — Architecture & Build Contract
 
 This document is the specification the code implements. It is written so a parallel team
 of build agents can each own a subsystem without ambiguity. Every named component below
@@ -28,40 +28,40 @@ implementation pending.
 
 | Subsystem | Module | Status |
 |---|---|---|
-| Event bus (HUD wiring + audit source) | `orbynth/events.py` | DONE |
-| Config, providers, quota specs, roster | `orbynth/config.py` | DONE |
-| Per-agent memory (episodic/semantic/board) | `orbynth/memory.py` | DONE |
-| Provider registry (OpenAI-compatible, Gemini, Anthropic, custom base_url) | `orbynth/llm/providers.py` | DONE (transport is stdlib HTTP; streaming via SSE) |
-| Quota manager (rpm/rpd/tpm, windows, cooldowns, fallback chains) | `orbynth/llm/quotas.py` | DONE |
-| Model runtime (complete/stream/tool-calls/fallback) | `orbynth/llm/runtime.py` | DONE (offline `echo` provider for tests) |
-| Agent identity, ranks, capability sets, budgets | `orbynth/agents/identity.py` | DONE |
-| Agent loop (plan → act → observe → report) | `orbynth/agents/base.py` | DONE |
-| Orchestrator (teams, delegation, reporting, health re-tasking) | `orbynth/agents/orchestrator.py` | DONE |
-| Role templates (Sovereign/Steward/Foreman/Operative/Artificer/…) | `orbynth/agents/roles.py` | DONE |
-| Action registry + permission gate + audit | `orbynth/actions/registry.py` | DONE |
-| Filesystem actions (range reads, write, create any extension, zip/unzip, rename, delete, move, copy, search) | `orbynth/actions/filesystem.py` | DONE |
-| Shell actions | `orbynth/actions/shell.py` | DONE |
-| Input control (mouse/keyboard) with **focus guard** and **verify-typed** | `orbynth/actions/input_control.py` | DRIVER |
-| Vision (capture, OCR, element grounding, diff, "describe like vision" text fallback) | `orbynth/actions/vision.py` | DRIVER |
-| Windows/apps (launch, focus, UIA tree, window enumeration/state) | `orbynth/actions/windows.py` | DRIVER |
-| Office (Word/Excel/Access/PowerPoint via COM; save/export/print/macros) | `orbynth/actions/office.py` | DRIVER |
-| Browser (tabs, icons incl. DevTools/extensions/lens/menu, click, type, scroll, forms, extract, eval, downloads, cookies, history) | `orbynth/actions/browser.py` | DRIVER |
-| WhatsApp (pair, chats, send/receive, voice notes, images, voice calls) | `orbynth/actions/whatsapp.py` | DRIVER + SPEC |
-| Plugin loader + capability-scoped host | `orbynth/plugins/loader.py` | DONE |
-| Self-extension Forge (write → validate → install → register) | `orbynth/plugins/forge.py` | DONE (LLM-driven; template-first, memory-assisted later) |
-| Voice session (wake, streaming STT, TTS, barge-in) | `orbynth/voice/session.py` | SPEC + thin real interface |
-| HUD bridge (WebSocket fanout, static host, webview launcher) | `orbynth/hud/bridge.py` | DONE |
+| Event bus (HUD wiring + audit source) | `zyntharo/events.py` | DONE |
+| Config, providers, quota specs, roster | `zyntharo/config.py` | DONE |
+| Per-agent memory (episodic/semantic/board) | `zyntharo/memory.py` | DONE |
+| Provider registry (OpenAI-compatible, Gemini, Anthropic, custom base_url) | `zyntharo/llm/providers.py` | DONE (transport is stdlib HTTP; streaming via SSE) |
+| Quota manager (rpm/rpd/tpm, windows, cooldowns, fallback chains) | `zyntharo/llm/quotas.py` | DONE |
+| Model runtime (complete/stream/tool-calls/fallback) | `zyntharo/llm/runtime.py` | DONE (offline `echo` provider for tests) |
+| Agent identity, ranks, capability sets, budgets | `zyntharo/agents/identity.py` | DONE |
+| Agent loop (plan → act → observe → report) | `zyntharo/agents/base.py` | DONE |
+| Orchestrator (teams, delegation, reporting, health re-tasking) | `zyntharo/agents/orchestrator.py` | DONE |
+| Role templates (Sovereign/Steward/Foreman/Operative/Artificer/…) | `zyntharo/agents/roles.py` | DONE |
+| Action registry + permission gate + audit | `zyntharo/actions/registry.py` | DONE |
+| Filesystem actions (range reads, write, create any extension, zip/unzip, rename, delete, move, copy, search) | `zyntharo/actions/filesystem.py` | DONE |
+| Shell actions | `zyntharo/actions/shell.py` | DONE |
+| Input control (mouse/keyboard) with **focus guard** and **verify-typed** | `zyntharo/actions/input_control.py` | DRIVER |
+| Vision (capture, OCR, element grounding, diff, "describe like vision" text fallback) | `zyntharo/actions/vision.py` | DRIVER |
+| Windows/apps (launch, focus, UIA tree, window enumeration/state) | `zyntharo/actions/windows.py` | DRIVER |
+| Office (Word/Excel/Access/PowerPoint via COM; save/export/print/macros) | `zyntharo/actions/office.py` | DRIVER |
+| Browser (tabs, icons incl. DevTools/extensions/lens/menu, click, type, scroll, forms, extract, eval, downloads, cookies, history) | `zyntharo/actions/browser.py` | DRIVER |
+| WhatsApp (pair, chats, send/receive, voice notes, images, voice calls) | `zyntharo/actions/whatsapp.py` | DRIVER + SPEC |
+| Plugin loader + capability-scoped host | `zyntharo/plugins/loader.py` | DONE |
+| Self-extension Forge (write → validate → install → register) | `zyntharo/plugins/forge.py` | DONE (LLM-driven; template-first, memory-assisted later) |
+| Voice session (wake, streaming STT, TTS, barge-in) | `zyntharo/voice/session.py` | SPEC + thin real interface |
+| HUD bridge (WebSocket fanout, static host, webview launcher) | `zyntharo/hud/bridge.py` | DONE |
 | HUD front-end (particle core, wires, panels, voice UI) | `hud/` | DONE |
-| Process supervisor, job ownership, orphan cleanup | `orbynth/ops/supervisor.py` | DONE |
-| Task requirements + unattended preflight | `orbynth/ops/preflight.py` | DONE |
-| Outcome verification + risk-tiered effort | `orbynth/ops/verification.py` | DONE |
-| Owner identity (first run, PIN, recovery, shared PCs) | `orbynth/ops/owner.py` | DONE (voice matcher is injected; no bundled speaker-ID model) |
-| Launch modes: BYOK / gateway / local-only | `orbynth/ops/billing.py` | DONE |
-| Signed model catalog, apply gate, rollback, drift check | `orbynth/ops/catalog.py` | DONE (Ed25519 needs `cryptography`; HMAC fallback labelled) |
-| Responsiveness governor (priority, pause) | `orbynth/ops/governor.py` | DONE (busy detection is driver-dependent and honest about it) |
-| Urdu/Arabic/RTL language layer | `orbynth/ops/languages.py` | DONE |
-| One definition of what is irreversible | `orbynth/ops/risk.py` | DONE |
-| Capacity plan + wave execution | `orbynth/agents/planning.py` | DONE |
+| Process supervisor, job ownership, orphan cleanup | `zyntharo/ops/supervisor.py` | DONE |
+| Task requirements + unattended preflight | `zyntharo/ops/preflight.py` | DONE |
+| Outcome verification + risk-tiered effort | `zyntharo/ops/verification.py` | DONE |
+| Owner identity (first run, PIN, recovery, shared PCs) | `zyntharo/ops/owner.py` | DONE (voice matcher is injected; no bundled speaker-ID model) |
+| Launch modes: BYOK / gateway / local-only | `zyntharo/ops/billing.py` | DONE |
+| Signed model catalog, apply gate, rollback, drift check | `zyntharo/ops/catalog.py` | DONE (Ed25519 needs `cryptography`; HMAC fallback labelled) |
+| Responsiveness governor (priority, pause) | `zyntharo/ops/governor.py` | DONE (busy detection is driver-dependent and honest about it) |
+| Urdu/Arabic/RTL language layer | `zyntharo/ops/languages.py` | DONE |
+| One definition of what is irreversible | `zyntharo/ops/risk.py` | DONE |
+| Capacity plan + wave execution | `zyntharo/agents/planning.py` | DONE |
 | Master release gate + acceptance manifest | `tools/release_gate.py`, `tools/acceptance.json` | DONE |
 
 ## 3. Agent model
@@ -229,20 +229,20 @@ the cage and dials render without throwing at wide and narrow sizes, and that ev
 the check instead of drawing an empty box. `tests/test_hud.py` runs it as part of the suite.
 
 No event may exist without an effect: `hud/coverage.json` is generated from
-`orbynth/events.py` by `tools/hud_coverage.py`, and `tests/test_hud.py` asserts it is complete
+`zyntharo/events.py` by `tools/hud_coverage.py`, and `tests/test_hud.py` asserts it is complete
 and current. A topic written as a bare string also fails that check, so every topic is a
 declared constant.
 
 ## 7. Build order for a parallel agent team
 
-Each workstream is independently testable against the frozen interfaces in `orbynth/`.
+Each workstream is independently testable against the frozen interfaces in `zyntharo/`.
 
 **Order matters here.** The first revision froze the contracts and then ran fifteen-plus
 agents in parallel, which is the riskiest sequence available: nothing had run end to end, so
-every contract being parallelised was a guess. The enforced order (`orbynth/agents/planning.py`)
+every contract being parallelised was a guess. The enforced order (`zyntharo/agents/planning.py`)
 puts **M0 — one real task through every layer — before any wide fan-out**, then proceeds in
 waves sized to the host. If the host cannot run agents concurrently
-(`ORBYNTH_AGENT_PARALLELISM=1`), the same waves run one at a time: nothing is dropped.
+(`ZYNTHARO_AGENT_PARALLELISM=1`), the same waves run one at a time: nothing is dropped.
 
 1. **M0 slice** — one task through model → gate → driver → evidence → memory → HUD. *(blocking)*
 2. **Core** — events, config, memory. *(blocking; everything imports it)*
@@ -319,11 +319,11 @@ definition, enforced in the registry, not left to a caller's judgement.
 ### 22.6 Who pays for the AI
 
 Three modes (`ops/billing.py`). **BYOK** is the default for the first release: the user's own
-keys, ORBYNTH spends and resells nothing. **Gateway** is opt-in and refuses to arm itself
+keys, ZYNTHARO spends and resells nothing. **Gateway** is opt-in and refuses to arm itself
 without a recorded legal-review reference plus a per-provider confirmation that resale is
 permitted, and without abuse controls: per-user daily request and token caps, a global daily
 spend ceiling, and a kill switch. **Local-only** refuses remote providers and needs a local
-runtime on loopback. `orbynth billing` prints the mode and exactly what is still blocking it.
+runtime on loopback. `zyntharo billing` prints the mode and exactly what is still blocking it.
 
 ### 22.7 Owner identity
 
@@ -368,7 +368,7 @@ Urdu, Arabic, Persian, Hebrew and the other right-to-left scripts are first clas
 Urdu distinguished from Arabic by script-specific letters, text normalisation (presentation
 forms, tatweel, diacritics, Arabic-Indic digits) applied on **both** sides of every comparison
 so a correct Arabic interaction does not "fail" verification, per-language OCR packs, TTS
-voices and STT hints. On responsiveness (`ops/governor.py`): ORBYNTH runs below interactive
+voices and STT hints. On responsiveness (`ops/governor.py`): ZYNTHARO runs below interactive
 priority (`nice` / `BELOW_NORMAL_PRIORITY_CLASS`), and games, video calls and presentations
 pause background and maintenance work and defer desktop work — while work the user asked for
 right now is never paused, because it is their machine and their request.
@@ -388,7 +388,7 @@ missing feature: the code ran, and the answer it produced was wrong.
 | Persian detection | `پ چ ژ گ ک ی` are shared by Urdu and Persian, and Urdu was tested first, so Persian could never win | the sets are split: Urdu needs an Urdu-only letter, Persian needs Persian evidence and no Arabic-only letter (`test_persian_is_not_swallowed_by_urdu`) |
 | "Done" with nothing to check | An empty contract fell through to `met`, certifying a task with no criteria | empty criteria → `uncertain`, and the summary says no criteria were written (`test_a_contract_with_nothing_to_check_is_never_met`) |
 | "0 side effects" | A contract with no declared capabilities reported zero side effects, which reads like a clean bill of health | reported as *not judged*, with the reason (`test_side_effects_line_is_honest_when_no_capabilities_were_declared`) |
-| Primary entry point | `orbynth run` handed the objective to the Sovereign with no contract at all, bypassing outcome verification entirely | a contract is written from the request; `--expect PATH` states promised outputs (`test_the_live_task_path_checks_the_outcome_against_a_written_contract`) |
+| Primary entry point | `zyntharo run` handed the objective to the Sovereign with no contract at all, bypassing outcome verification entirely | a contract is written from the request; `--expect PATH` states promised outputs (`test_the_live_task_path_checks_the_outcome_against_a_written_contract`) |
 | Streamed usage | Streamed answers (the voice path) charged no quota, budget or billing, so the Steward saw headroom that was already spent | vendor usage is threaded out of every adapter and charged; an empty stream raises instead of returning silence (`test_streamed_answers_are_charged_to_quota`) |
 | Helper ownership | `Launched.terminate()` used a module-level global, so a second supervisor meant stopping the wrong process book | the launched process records its own supervisor (`test_a_launched_helper_remembers_the_supervisor_that_owns_it`) |
 | Invisible subsystems | `hud/app.js` claimed a generated coverage file and a test that did not exist; topics were also emitted as bare strings | `tools/hud_coverage.py`, `hud/coverage.json`, every topic a declared constant, asserted in `tests/test_hud.py` and blocking at M4 |
@@ -413,7 +413,7 @@ missing feature: the code ran, and the answer it produced was wrong.
 These are not code problems and the gate reports them as outstanding blocking items:
 
 1. **Launch mode** — BYOK (default), hosted gateway (needs the legal review and caps), or
-   local-only. `orbynth billing --mode gateway` lists what is missing.
+   local-only. `zyntharo billing --mode gateway` lists what is missing.
 2. **Test accounts and licences** — WhatsApp test number and device, Microsoft 365 and Google
    test tenants, Office licences, code-signing certificate(s), a second clean machine, a
    dedicated always-on machine or VM, audio hardware for voice and call tests.

@@ -1,4 +1,4 @@
-"""Shared fixtures for the ORBYNTH test suite.
+"""Shared fixtures for the ZYNTHARO test suite.
 
 Everything is built on the offline ``echo`` provider so the whole system — agents, quotas,
 tools, plugins, HUD — is exercised without a network, an API key or a desktop session.
@@ -12,17 +12,17 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from orbynth.actions import build_registry, orchestration  # noqa: E402
-from orbynth.actions.registry import ActionContext  # noqa: E402
-from orbynth.agents.orchestrator import Orchestrator  # noqa: E402
-from orbynth.config import AgentConfig, AppConfig, ModelSpec, ProviderConfig, Secrets, expand_capabilities  # noqa: E402
-from orbynth.events import EventBus  # noqa: E402
-from orbynth.llm.providers import ProviderRegistry  # noqa: E402
-from orbynth.llm.quotas import QuotaManager  # noqa: E402
-from orbynth.llm.runtime import ModelRuntime  # noqa: E402
-from orbynth.memory import MemoryStore  # noqa: E402
-from orbynth.plugins.forge import Forge  # noqa: E402
-from orbynth.plugins.loader import PluginHost  # noqa: E402
+from zyntharo.actions import build_registry, orchestration  # noqa: E402
+from zyntharo.actions.registry import ActionContext  # noqa: E402
+from zyntharo.agents.orchestrator import Orchestrator  # noqa: E402
+from zyntharo.config import AgentConfig, AppConfig, ModelSpec, ProviderConfig, Secrets, expand_capabilities  # noqa: E402
+from zyntharo.events import EventBus  # noqa: E402
+from zyntharo.llm.providers import ProviderRegistry  # noqa: E402
+from zyntharo.llm.quotas import QuotaManager  # noqa: E402
+from zyntharo.llm.runtime import ModelRuntime  # noqa: E402
+from zyntharo.memory import MemoryStore  # noqa: E402
+from zyntharo.plugins.forge import Forge  # noqa: E402
+from zyntharo.plugins.loader import PluginHost  # noqa: E402
 
 ECHO_TAGS = ["offline", "fast", "general", "coding", "reasoning", "vision", "cheap"]
 
@@ -65,7 +65,7 @@ def make_config(home: str, quotas: dict[str, dict[str, int]] | None = None) -> A
             )
     config = AppConfig(home=home, providers=providers)
     # The standing cast, with provider-neutral models so the roster always runs offline.
-    from orbynth.config import default_config
+    from zyntharo.config import default_config
 
     config.roster = [
         AgentConfig(name=entry.name, role=entry.role, model="", capabilities=entry.capabilities) for entry in default_config().roster
@@ -78,7 +78,7 @@ class Stack:
     """Assembled system under test."""
 
     def __init__(self, home: str | None = None, quotas: dict[str, dict[str, int]] | None = None, registry_ready: bool = True):
-        self.home = home or tempfile.mkdtemp(prefix="orbynth-test-")
+        self.home = home or tempfile.mkdtemp(prefix="zyntharo-test-")
         self.config = make_config(self.home, quotas)
         self.bus = EventBus()
         self.memory = MemoryStore(os.path.join(self.home, "test.db"))
@@ -100,7 +100,7 @@ class Stack:
         self.quotas.save()
 
     def run(self, title: str, objective: str, role: str = "operative", capabilities=None, agent=None):
-        from orbynth.agents.orchestrator import WorkItem
+        from zyntharo.agents.orchestrator import WorkItem
 
         if agent is None:
             agent = self.orchestrator.spawn(role=role, name="TestAgent", capabilities=capabilities)

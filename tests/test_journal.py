@@ -11,9 +11,9 @@ import os
 import tempfile
 import unittest
 
-from orbynth.actions.registry import ActionContext
-from orbynth.config import expand_capabilities
-from orbynth.ops.journal import (
+from zyntharo.actions.registry import ActionContext
+from zyntharo.config import expand_capabilities
+from zyntharo.ops.journal import (
     ABANDONED,
     COMMITTED,
     FAILED,

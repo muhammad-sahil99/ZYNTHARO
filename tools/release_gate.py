@@ -99,7 +99,7 @@ def host_capabilities() -> dict[str, bool]:
         "dedicated_machine",
         "second_machine",
     ):
-        caps[name] = os.environ.get(f"ORBYNTH_ACCEPT_{name.upper()}", "").strip() == "1"
+        caps[name] = os.environ.get(f"ZYNTHARO_ACCEPT_{name.upper()}", "").strip() == "1"
     return caps
 
 
@@ -275,7 +275,7 @@ def run_gate(
 
 def format_report(report: dict[str, Any]) -> str:
     lines = [
-        f"ORBYNTH release gate - milestone {report['milestone']} - {report['verdict']}",
+        f"ZYNTHARO release gate - milestone {report['milestone']} - {report['verdict']}",
         f"  passed {report['counts'][PASS]} | failed {report['counts'][FAIL]} | "
         f"blocked {report['counts'][BLOCKED]} | waived {report['counts'][WAIVED]} | skipped {report['counts'][SKIPPED]}",
         "",
@@ -300,7 +300,7 @@ def format_report(report: dict[str, Any]) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="ORBYNTH master release gate")
+    parser = argparse.ArgumentParser(description="ZYNTHARO master release gate")
     parser.add_argument("--milestone", default="GA", help="run checks up to this milestone (M0..M4, GA)")
     parser.add_argument("--only", default="", help="comma-separated check ids")
     parser.add_argument("--list", action="store_true", help="list the manifest and exit")

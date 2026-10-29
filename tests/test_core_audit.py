@@ -12,11 +12,11 @@ import os
 import tempfile
 import unittest
 
-from orbynth.config import ModelSpec
-from orbynth.events import QUOTA_WARNING, EventBus
-from orbynth.llm.quotas import QuotaManager
-from orbynth.memory import MemoryStore
-from orbynth.llm.runtime import Budget, BudgetExceeded
+from zyntharo.config import ModelSpec
+from zyntharo.events import QUOTA_WARNING, EventBus
+from zyntharo.llm.quotas import QuotaManager
+from zyntharo.memory import MemoryStore
+from zyntharo.llm.runtime import Budget, BudgetExceeded
 
 
 class Clock:

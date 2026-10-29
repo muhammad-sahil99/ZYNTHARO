@@ -12,7 +12,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from orbynth.vision import camera as cam
+from zyntharo.vision import camera as cam
 
 
 class Frame:

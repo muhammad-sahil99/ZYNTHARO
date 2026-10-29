@@ -5,8 +5,8 @@ venv/
 build/
 dist/
 *.egg-info/
-.orbynth/
-orbynth-data/
+.zyntharo/
+zyntharo-data/
 node_modules/
 sidecars/whatsapp/node_modules/
 *.spec.bak

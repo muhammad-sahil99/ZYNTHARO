@@ -1,4 +1,4 @@
-/* ORBYNTH instrument widgets — canvas 2D mini-instruments.
+/* ZYNTHARO instrument widgets — canvas 2D mini-instruments.
 
    The console in the reference is dense because it is *busy with instruments*: a sweeping radar,
    a lattice diagram, bar clusters, ruled scales, cell matrices, ladders. These are those
@@ -562,7 +562,7 @@
       try {
         instrument.widgets.push(new Kind(canvas));
       } catch (error) {
-        if (typeof console !== "undefined" && console.warn) console.warn("[orbynth] widget failed: " + canvas.dataset.widget, error);
+        if (typeof console !== "undefined" && console.warn) console.warn("[zyntharo] widget failed: " + canvas.dataset.widget, error);
       }
     });
     return instrument;

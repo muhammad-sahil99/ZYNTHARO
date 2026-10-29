@@ -18,8 +18,9 @@ import unittest
 import urllib.request
 
 from tests.helpers import Stack
-from orbynth.events import EventBus
-from orbynth.hud.bridge import HudBridge, decode_frames, encode_frame, handshake_response
+from zyntharo import __product__
+from zyntharo.events import EventBus
+from zyntharo.hud.bridge import HudBridge, decode_frames, encode_frame, handshake_response
 
 
 def client_frame(payload: bytes, opcode: int = 0x1) -> bytes:
@@ -104,7 +105,7 @@ class BridgeTests(unittest.TestCase):
             host="127.0.0.1",
             port=0,
             static_dir=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hud"),
-            snapshot_provider=lambda: {"product": "ORBYNTH", "agents": [{"name": "Sovereign", "rank": 0}]},
+            snapshot_provider=lambda: {"product": "ZYNTHARO Beta", "agents": [{"name": "Sovereign", "rank": 0}]},
             command_router=router,
         ).start()
         self.socket = self._connect()
@@ -150,7 +151,7 @@ class BridgeTests(unittest.TestCase):
     def test_hello_carries_the_system_snapshot(self):
         hello = self.read_frame()
         self.assertEqual(hello["type"], "hello")
-        self.assertEqual(hello["snapshot"]["product"], "ORBYNTH")
+        self.assertEqual(hello["snapshot"]["product"], "ZYNTHARO Beta")
         self.assertTrue(hello["client_id"])
 
     def test_bus_events_reach_the_client(self):
@@ -198,12 +199,15 @@ class BridgeTests(unittest.TestCase):
 
         with urllib.request.urlopen(f"{base}/api/state", timeout=5) as response:
             state = json.loads(response.read())
-        self.assertEqual(state["product"], "ORBYNTH")
+        # The brand comes from the package, not a literal in the test: a rename that misses the
+        # wordmark must fail here rather than be papered over by an updated string.
+        self.assertEqual(state["product"], __product__)
+        self.assertIn("Beta", state["product"])
 
         with urllib.request.urlopen(f"{base}/", timeout=5) as response:
             html = response.read().decode("utf-8")
             content_type = response.headers["Content-Type"]
-        self.assertIn("ORBYNTH", html)
+        self.assertIn("ZYNTHARO", html)
         self.assertIn("text/html", content_type)
 
         with urllib.request.urlopen(f"{base}/app.js", timeout=5) as response:
@@ -212,7 +216,7 @@ class BridgeTests(unittest.TestCase):
     def test_path_traversal_is_refused(self):
         base = f"http://{self.bridge.host}:{self.bridge.port}"
         try:
-            urllib.request.urlopen(f"{base}/../orbynth/config.py", timeout=5).read()
+            urllib.request.urlopen(f"{base}/../zyntharo/config.py", timeout=5).read()
             self.fail("traversal should have been refused")
         except urllib.error.HTTPError as error:
             self.assertIn(error.code, (403, 404))
@@ -241,7 +245,7 @@ class HudCoverageTests(unittest.TestCase):
         self.assertEqual(data["unhandled"], [], f"no HUD effect for: {data['unhandled']}")
         self.assertEqual(
             data["literal_topics"], [],
-            "topics must be declared in orbynth/events.py, not written as bare strings: "
+            "topics must be declared in zyntharo/events.py, not written as bare strings: "
             f"{data['literal_topics']}",
         )
         self.assertTrue(data["topics"], "no topics found: the parser is broken, not the code")
@@ -332,7 +336,7 @@ class HudVisualTests(unittest.TestCase):
 
 class HudServiceTests(unittest.TestCase):
     def test_snapshot_exposes_the_whole_system(self):
-        from orbynth.hud.service import HudService
+        from zyntharo.hud.service import HudService
 
         stack = Stack()
         try:
@@ -348,7 +352,7 @@ class HudServiceTests(unittest.TestCase):
                 plugins=stack.plugins,
             )
             snapshot = service.snapshot()
-            self.assertEqual(snapshot["product"], "ORBYNTH")
+            self.assertEqual(snapshot["product"], __product__)
             self.assertGreater(snapshot["actions"]["count"], 80)
             self.assertTrue(snapshot["agents"])
             self.assertTrue(snapshot["models"])
@@ -363,7 +367,7 @@ class HudServiceTests(unittest.TestCase):
         The language layer knew the direction; the HUD never asked, so an Urdu or Arabic user
         got left-anchored chrome with right-to-left text inside it.
         """
-        from orbynth.hud.service import HudService
+        from zyntharo.hud.service import HudService
 
         stack = Stack()
         try:
@@ -395,7 +399,7 @@ class HudServiceTests(unittest.TestCase):
         self.assertIn("status-disputed", css)
 
     def test_hud_commands_require_a_live_fleet(self):
-        from orbynth.hud.service import HudService
+        from zyntharo.hud.service import HudService
 
         stack = Stack()
         try:

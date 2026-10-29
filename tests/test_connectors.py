@@ -18,13 +18,13 @@ import tempfile
 import unittest
 from unittest import mock
 
-from orbynth.actions import connectors as connector_actions
-from orbynth.actions.registry import ActionContext, ActionRegistry
-from orbynth.connectors import base as cbase
-from orbynth.connectors.mail import PROVIDERS, MailConnector, provider_list
-from orbynth.connectors.registry import ConnectorRegistry, UNSUPPORTED
-from orbynth.connectors.saas import SLACK, SaasConnector
-from orbynth.connectors.store import Vault, redact
+from zyntharo.actions import connectors as connector_actions
+from zyntharo.actions.registry import ActionContext, ActionRegistry
+from zyntharo.connectors import base as cbase
+from zyntharo.connectors.mail import PROVIDERS, MailConnector, provider_list
+from zyntharo.connectors.registry import ConnectorRegistry, UNSUPPORTED
+from zyntharo.connectors.saas import SLACK, SaasConnector
+from zyntharo.connectors.store import Vault, redact
 
 
 class VaultTests(unittest.TestCase):
@@ -121,7 +121,7 @@ class MailConnectorTests(unittest.TestCase):
             "Content-Type: text/html; charset=utf-8\r\n\r\n<p>Hello <b>there</b></p>"
         )
         message = email_module.message_from_string(raw)
-        from orbynth.connectors.mail import _text_body
+        from zyntharo.connectors.mail import _text_body
 
         body = _text_body(message)
         self.assertIn("Hello", body)
@@ -145,7 +145,7 @@ class SaasConnectorTests(unittest.TestCase):
     def test_call_builds_the_documented_request(self):
         connection = cbase.Connection(name="slack", values={"token": "xoxb-abc"})
         connector = SaasConnector(SLACK, connection)
-        with mock.patch("orbynth.connectors.saas.request_json", return_value={"ok": True, "ts": "1"}) as patched:
+        with mock.patch("zyntharo.connectors.saas.request_json", return_value={"ok": True, "ts": "1"}) as patched:
             result = connector.call("post_message", channel="C1", text="hello")
         self.assertEqual(result["ts"], "1")
         method, url = patched.call_args.args[0], patched.call_args.args[1]
@@ -157,7 +157,7 @@ class SaasConnectorTests(unittest.TestCase):
     def test_slack_ok_false_surfaces_the_platform_error(self):
         connector = SaasConnector(SLACK, cbase.Connection(name="slack", values={"token": "x"}))
         with mock.patch(
-            "orbynth.connectors.saas.request_json",
+            "zyntharo.connectors.saas.request_json",
             return_value={"ok": False, "error": "channel_not_found"},
         ):
             with self.assertRaises(cbase.ConnectorError) as caught:
@@ -165,18 +165,18 @@ class SaasConnectorTests(unittest.TestCase):
         self.assertIn("channel_not_found", str(caught.exception))
 
     def test_key_and_token_style_goes_into_the_query(self):
-        from orbynth.connectors.saas import TRELLO
+        from zyntharo.connectors.saas import TRELLO
 
         connection = cbase.Connection(name="trello", values={"key": "k", "token": "t"})
         connector = SaasConnector(TRELLO, connection)
-        with mock.patch("orbynth.connectors.saas.request_json", return_value={"id": "me"}) as patched:
+        with mock.patch("zyntharo.connectors.saas.request_json", return_value={"id": "me"}) as patched:
             connector.call("member")
         params = patched.call_args.kwargs["params"]
         self.assertEqual(params["key"], "k")
         self.assertEqual(params["token"], "t")
 
     def test_path_placeholders_are_required(self):
-        from orbynth.connectors.saas import GITHUB
+        from zyntharo.connectors.saas import GITHUB
 
         connector = SaasConnector(GITHUB, cbase.Connection(name="github", values={"token": "t"}))
         with self.assertRaises(cbase.ConnectorError) as caught:
@@ -284,13 +284,13 @@ class GateTests(unittest.TestCase):
         called.assert_called_once()
 
     def test_connector_send_is_owner_only_and_irreversible(self):
-        from orbynth.ops.risk import is_irreversible
+        from zyntharo.ops.risk import is_irreversible
 
         self.assertTrue(is_irreversible("connector.send"))
         self.assertFalse(is_irreversible("connector.read"))
 
     def test_capabilities_are_declared(self):
-        from orbynth.config import CAPABILITIES
+        from zyntharo.config import CAPABILITIES
 
         for capability in ("connector.read", "connector.write", "connector.send", "connector.admin"):
             self.assertIn(capability, CAPABILITIES)

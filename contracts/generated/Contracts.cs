@@ -3,7 +3,7 @@
 
 using System.Collections.Generic;
 
-namespace Orbynth.Contracts
+namespace Zyntharo.Contracts
 {
     // contracts/interfaces.schema.json
     /// <summary>Plugin manifest</summary>

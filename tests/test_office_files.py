@@ -7,9 +7,9 @@ import tempfile
 import unittest
 import zipfile
 
-from orbynth.actions.registry import ActionContext, ActionRegistry
-from orbynth.ops import docengine
-from orbynth.ops.docengine import (
+from zyntharo.actions.registry import ActionContext, ActionRegistry
+from zyntharo.ops import docengine
+from zyntharo.ops.docengine import (
     DocumentError,
     NotSupported,
     content_hash,
@@ -163,7 +163,7 @@ class LimitedFormatTests(unittest.TestCase):
 
     def test_unsupported_extension_is_refused_by_the_action(self) -> None:
         registry = ActionRegistry()
-        from orbynth.actions import office_files
+        from zyntharo.actions import office_files
 
         registry.register_all(office_files.all_actions())
         ctx = ActionContext(capabilities=frozenset({"office.word", "office.excel", "office.powerpoint", "filesystem.read"}))
@@ -174,7 +174,7 @@ class LimitedFormatTests(unittest.TestCase):
 
 class ActionTests(unittest.TestCase):
     def setUp(self) -> None:
-        from orbynth.actions import office_files
+        from zyntharo.actions import office_files
 
         self.registry = ActionRegistry()
         self.registry.register_all(office_files.all_actions())

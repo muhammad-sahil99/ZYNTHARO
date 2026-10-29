@@ -1,10 +1,10 @@
 """The WhatsApp test double.
 
 Specification 4.1 bans mocks in production code, and this class used to live inside
-``orbynth/actions/whatsapp.py`` — a fake backend shipped in the product, one wiring mistake away
+``zyntharo/actions/whatsapp.py`` — a fake backend shipped in the product, one wiring mistake away
 from being handed a real user's chats. It belongs here, in the harness, where doubles are
 required and clearly labelled. The shipped module keeps only the interface
-(:class:`~orbynth.actions.whatsapp.WhatsAppBackend`) and the real transport.
+(:class:`~zyntharo.actions.whatsapp.WhatsAppBackend`) and the real transport.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any, Sequence
 
-from orbynth.actions.whatsapp import WhatsAppBackend
+from zyntharo.actions.whatsapp import WhatsAppBackend
 
 
 class MockWhatsApp(WhatsAppBackend):

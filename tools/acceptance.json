@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "product": "ORBYNTH",
+  "product": "ZYNTHARO",
   "note": "One manifest for the whole product. Every section's acceptance test lives here. blocking=false means it is informative: a failure does not stop a release. A blocking check with unmet prerequisites may only be waived in release_waivers.json with who/when/why recorded.",
   "milestones": [
     {"id": "M0", "name": "One real task through every layer", "exit": "a task reaches a driver, is verified, reported, remembered and shown on the HUD"},
@@ -148,10 +148,10 @@
     },
     {
       "id": "doctor_clean",
-      "title": "orbynth doctor reports honestly: every missing driver named, none faked",
+      "title": "zyntharo doctor reports honestly: every missing driver named, none faked",
       "milestone": "M1",
       "kind": "command",
-      "command": "ORBYNTH_HOME=$(mktemp -d) python3 -m orbynth doctor",
+      "command": "ZYNTHARO_HOME=$(mktemp -d) python3 -m zyntharo doctor",
       "blocking": true,
       "timeout": 300
     },
@@ -162,8 +162,8 @@
       "kind": "manual",
       "blocking": true,
       "requires": ["second_machine"],
-      "procedure": "On a machine that has never run ORBYNTH, install, run `orbynth doctor`, then `orbynth run \"write a file and read it back\"`. Record the transcript.",
-      "prerequisite_note": "needs a second clean machine; set ORBYNTH_ACCEPT_SECOND_MACHINE=1 once it exists"
+      "procedure": "On a machine that has never run ZYNTHARO, install, run `zyntharo doctor`, then `zyntharo run \"write a file and read it back\"`. Record the transcript.",
+      "prerequisite_note": "needs a second clean machine; set ZYNTHARO_ACCEPT_SECOND_MACHINE=1 once it exists"
     },
     {
       "id": "input_focus_guard",
@@ -172,7 +172,7 @@
       "kind": "manual",
       "blocking": true,
       "requires": ["windows", "interactive_desktop"],
-      "procedure": "Open Notepad and a second window. Ask ORBYNTH to type a long string into Notepad, then steal focus mid-typing. Expect an abort with the wrong-window reason, no text in the other window, and a retry after re-focus. Then target a read-only field and confirm it reports failure instead of claiming success.",
+      "procedure": "Open Notepad and a second window. Ask ZYNTHARO to type a long string into Notepad, then steal focus mid-typing. Expect an abort with the wrong-window reason, no text in the other window, and a retry after re-focus. Then target a read-only field and confirm it reports failure instead of claiming success.",
       "prerequisite_note": "needs a real Windows desktop with pynput/pyautogui/uiautomation installed"
     },
     {
@@ -193,7 +193,7 @@
       "blocking": true,
       "requires": ["windows", "office_license"],
       "procedure": "Create, edit, save-as, export to PDF and reopen a document in each app, including an Access database and a PowerPoint deck with a chart. Confirm no document is left unsaved or locked.",
-      "prerequisite_note": "needs a licensed Microsoft Office install; set ORBYNTH_ACCEPT_OFFICE_LICENSE=1"
+      "prerequisite_note": "needs a licensed Microsoft Office install; set ZYNTHARO_ACCEPT_OFFICE_LICENSE=1"
     },
     {
       "id": "whatsapp_pipeline",
@@ -203,7 +203,7 @@
       "blocking": true,
       "requires": ["whatsapp_account"],
       "procedure": "Pair with a test number, list chats, search, send text/image/voice note, receive each, then place and answer a voice call using a dedicated test device. Confirm the allow-list blocks a chat that was not permitted.",
-      "prerequisite_note": "needs a WhatsApp test number and the Node sidecar built; set ORBYNTH_ACCEPT_WHATSAPP_ACCOUNT=1"
+      "prerequisite_note": "needs a WhatsApp test number and the Node sidecar built; set ZYNTHARO_ACCEPT_WHATSAPP_ACCOUNT=1"
     },
     {
       "id": "plugin_lifecycle",
@@ -293,7 +293,7 @@
       "blocking": true,
       "requires": ["audio_hardware"],
       "procedure": "Say the wake word, interrupt the assistant mid-sentence (barge-in), and confirm the transcript in the HUD matches the audio. Repeat with Urdu or Arabic speech and confirm the language switch.",
-      "prerequisite_note": "needs a microphone and speakers; set ORBYNTH_ACCEPT_AUDIO_HARDWARE=1"
+      "prerequisite_note": "needs a microphone and speakers; set ZYNTHARO_ACCEPT_AUDIO_HARDWARE=1"
     },
     {
       "id": "hud_live_wiring",
@@ -313,7 +313,7 @@
       "blocking": true,
       "requires": ["dedicated_machine"],
       "procedure": "Schedule a GUI task for a time when no user is logged in but the dedicated session is unlocked, and confirm it runs; then lock the session and confirm the run defers with an honest reason instead of failing silently.",
-      "prerequisite_note": "needs an always-on machine or VM with an auto-login or isolated session; set ORBYNTH_ACCEPT_DEDICATED_MACHINE=1"
+      "prerequisite_note": "needs an always-on machine or VM with an auto-login or isolated session; set ZYNTHARO_ACCEPT_DEDICATED_MACHINE=1"
     },
     {
       "id": "installer_zero_prereq",
@@ -332,8 +332,8 @@
       "kind": "owner",
       "blocking": true,
       "requires": ["legal_review"],
-      "procedure": "Record the review reference for every provider whose models ORBYNTH calls, and for the hosted gateway specifically whether resale is permitted. BYOK needs no resale review, but still needs a privacy review.",
-      "prerequisite_note": "only the owner can do this; set ORBYNTH_ACCEPT_LEGAL_REVIEW=1 once the reference is recorded"
+      "procedure": "Record the review reference for every provider whose models ZYNTHARO calls, and for the hosted gateway specifically whether resale is permitted. BYOK needs no resale review, but still needs a privacy review.",
+      "prerequisite_note": "only the owner can do this; set ZYNTHARO_ACCEPT_LEGAL_REVIEW=1 once the reference is recorded"
     },
     {
       "id": "test_accounts_ready",
@@ -343,14 +343,14 @@
       "blocking": false,
       "requires": ["test_tenant"],
       "procedure": "Provide dedicated test tenants and numbers so the browser, Office and WhatsApp checks can run without touching production data.",
-      "prerequisite_note": "only the owner can supply these; set ORBYNTH_ACCEPT_TEST_TENANT=1 once created"
+      "prerequisite_note": "only the owner can supply these; set ZYNTHARO_ACCEPT_TEST_TENANT=1 once created"
     },
     {
       "id": "provider_drift_check",
       "title": "Nightly provider check finds retired or renamed model IDs",
       "milestone": "GA",
       "kind": "command",
-      "command": "python3 -m orbynth catalog check",
+      "command": "python3 -m zyntharo catalog check",
       "blocking": false,
       "timeout": 300
     },

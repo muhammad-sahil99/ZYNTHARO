@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-PY_TARGET = ROOT / "orbynth" / "contracts" / "generated.py"
+PY_TARGET = ROOT / "zyntharo" / "contracts" / "generated.py"
 TS_TARGET = ROOT / "contracts" / "generated" / "contracts.d.ts"
 CS_TARGET = ROOT / "contracts" / "generated" / "Contracts.cs"
 
@@ -194,7 +194,7 @@ def _render_csharp(bundles: dict[str, dict]) -> str:
         "",
         "using System.Collections.Generic;",
         "",
-        "namespace Orbynth.Contracts",
+        "namespace Zyntharo.Contracts",
         "{",
     ]
     for file_name, bundle in bundles.items():
@@ -219,7 +219,7 @@ def _render_csharp(bundles: dict[str, dict]) -> str:
 
 def build() -> dict[str, object]:
     """Render all three bindings from the committed schemas."""
-    from orbynth.contracts import audit, load_bundle, registry
+    from zyntharo.contracts import audit, load_bundle, registry
 
     entries = registry()
     files = sorted({str(entry["file"]) for entry in entries.values()})

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* ORBYNTH WhatsApp sidecar.
+/* ZYNTHARO WhatsApp sidecar.
 
    This file was missing from the repository, which is why every WhatsApp action failed with
    "the sidecar script at .../sidecars/whatsapp/sidecar.js" — the Python client was complete and
@@ -17,7 +17,7 @@
        calls in any released version, so `call` reports {state:"unsupported", fallback:"desktop"}
        and the Python side drives the WhatsApp desktop app with the call audio bridge instead.
        Claiming a call was placed when it was not is exactly the failure mode to avoid.
-     * The session is persisted under the ORBYNTH home so pairing survives restarts, and a
+     * The session is persisted under the ZYNTHARO home so pairing survives restarts, and a
        disconnect reconnects with exponential backoff instead of dropping the session.
 */
 
@@ -29,8 +29,8 @@ const os = require('os');
 const path = require('path');
 
 const VERSION = 1;
-const HOME = process.env.ORBYNTH_HOME || path.join(os.homedir(), '.orbynth');
-const SESSION_DIR = process.env.ORBYNTH_WHATSAPP_SESSION || path.join(HOME, 'whatsapp-session');
+const HOME = process.env.ZYNTHARO_HOME || path.join(os.homedir(), '.zyntharo');
+const SESSION_DIR = process.env.ZYNTHARO_WHATSAPP_SESSION || path.join(HOME, 'whatsapp-session');
 const MAX_BACKOFF_MS = 60_000;
 
 function write(payload) {
@@ -105,7 +105,7 @@ function start() {
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
     },
     takeoverOnConflict: true,
-    userAgent: 'ORBYNTH/1.0 (desktop operative)',
+    userAgent: 'ZYNTHARO/1.0 (desktop operative)',
   });
 
   client.on('qr', (qr) => {
@@ -562,7 +562,7 @@ const methods = {
   async call() {
     // Honest feature detection. whatsapp-web.js does not implement voice calls, so this reports
     // unsupported and names the path that does work: the desktop app driven by the operative,
-    // with ORBYNTH's own audio routed into the call through the voice bridge.
+    // with ZYNTHARO's own audio routed into the call through the voice bridge.
     if (client && typeof client.call === 'function') {
       return { state: 'supported', note: 'this build exposes calls; the Python side will drive it' };
     }
@@ -572,7 +572,7 @@ const methods = {
       fallback: 'desktop',
       fallback_detail: (
         'Drive the WhatsApp desktop application instead: launch/focus it, start the call with the ' +
-        'OS-level input driver, then route ORBYNTH audio through the call bridge ' +
+        'OS-level input driver, then route ZYNTHARO audio through the call bridge ' +
         '(env.AudioRoute), which is what lets it hold a real conversation.'
       ),
     };

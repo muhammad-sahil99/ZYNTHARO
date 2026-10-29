@@ -15,11 +15,11 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from orbynth.channels import ChannelError, ChannelRegistry, default_registry
-from orbynth.channels.base import Channel, ChannelMessage, ChannelStatus, UNAVAILABLE
-from orbynth.channels.telegram import TelegramChannel
-from orbynth.workflows import DailyReport, InvoiceIntake, ReplyDesk, WorkflowError
-from orbynth.ops import docengine
+from zyntharo.channels import ChannelError, ChannelRegistry, default_registry
+from zyntharo.channels.base import Channel, ChannelMessage, ChannelStatus, UNAVAILABLE
+from zyntharo.channels.telegram import TelegramChannel
+from zyntharo.workflows import DailyReport, InvoiceIntake, ReplyDesk, WorkflowError
+from zyntharo.ops import docengine
 
 
 def write(path: str, text: str) -> str:
@@ -31,7 +31,7 @@ def write(path: str, text: str) -> str:
 
 class InvoiceIntakeTests(unittest.TestCase):
     def setUp(self):
-        self.home = tempfile.mkdtemp(prefix="orbynth-inv-")
+        self.home = tempfile.mkdtemp(prefix="zyntharo-inv-")
         self.source = os.path.join(self.home, "inbox")
         self.dest = os.path.join(self.home, "filed")
         self.ledger = os.path.join(self.home, "ledger.xlsx")
@@ -81,7 +81,7 @@ class InvoiceIntakeTests(unittest.TestCase):
 
 class DailyReportTests(unittest.TestCase):
     def setUp(self):
-        self.home = tempfile.mkdtemp(prefix="orbynth-rep-")
+        self.home = tempfile.mkdtemp(prefix="zyntharo-rep-")
         self.ledger = os.path.join(self.home, "ledger.xlsx")
         rows = [
             ["sha256", "source", "filed_to", "vendor", "amount", "currency", "invoice_date", "filed_at"],
@@ -132,7 +132,7 @@ class FakeChannel(Channel):
 
 class ReplyDeskTests(unittest.TestCase):
     def setUp(self):
-        self.home = tempfile.mkdtemp(prefix="orbynth-desk-")
+        self.home = tempfile.mkdtemp(prefix="zyntharo-desk-")
         self.desk = ReplyDesk(os.path.join(self.home, "desk.db"))
         self.channel = FakeChannel([ChannelMessage("fake", "cust-1", "where is my order?", "m-1", "Sam")])
 
@@ -222,7 +222,7 @@ class TelegramChannelTests(unittest.TestCase):
 
     def setUp(self):
         _BotAPI.bodies.clear()
-        self.offset = os.path.join(tempfile.mkdtemp(prefix="orbynth-tg-"), "offset.json")
+        self.offset = os.path.join(tempfile.mkdtemp(prefix="zyntharo-tg-"), "offset.json")
 
     def test_without_a_token_it_asks_for_one_instead_of_failing_later(self):
         channel = TelegramChannel(token="")

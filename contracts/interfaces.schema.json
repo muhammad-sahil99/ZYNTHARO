@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://orbynth.local/contracts/interfaces.schema.json",
-  "title": "ORBYNTH interface contracts",
+  "$id": "https://zyntharo.local/contracts/interfaces.schema.json",
+  "title": "ZYNTHARO interface contracts",
   "description": "The two interfaces that cross a trust boundary: what a plugin is allowed to declare before it is loaded, and what the native helper may be asked to do. Both are versioned in contracts/versions.json; a producer declaring an incompatible version is warned about and then disabled, never trusted.",
   "$defs": {
     "plugin-manifest": {

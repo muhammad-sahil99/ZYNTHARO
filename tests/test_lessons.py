@@ -13,7 +13,7 @@ import os
 import tempfile
 import unittest
 
-from orbynth.ops.lessons import LessonBook, signature_of
+from zyntharo.ops.lessons import LessonBook, signature_of
 
 
 class SignatureTests(unittest.TestCase):

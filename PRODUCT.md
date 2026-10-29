@@ -1,4 +1,4 @@
-# ORBYNTH — the product being sold
+# ZYNTHARO — the product being sold
 
 This file is the commercial definition, not the architecture. It exists so that every build
 decision can be checked against one question: **does this help a paying customer finish one of
@@ -12,7 +12,7 @@ developers. They will not install Python, Node, Git, Playwright or a terminal.
 
 ## The promise
 
-> Install ORBYNTH on your Windows PC. Point it at your own folders and your own accounts. It files
+> Install ZYNTHARO on your Windows PC. Point it at your own folders and your own accounts. It files
 > your invoices, prepares replies to customers for your approval, and produces your report — and
 > it shows you exactly what it did.
 
@@ -54,12 +54,12 @@ gate for each platform:
 |---|---|---|
 | Telegram | offered | official Bot API; a free bot token from @BotFather |
 | WhatsApp | offered | bundled sidecar; the customer scans a QR once; unofficial web session, so account risk is disclosed |
-| Discord | needs credentials | developer-portal bot token (`ORBYNTH_DISCORD_TOKEN`) |
+| Discord | needs credentials | developer-portal bot token (`ZYNTHARO_DISCORD_TOKEN`) |
 | Instagram / Messenger | not available | Meta business account, reviewed app, messaging permission |
 | X / Twitter DMs | not available | paid API tier |
 | LinkedIn, TikTok, Snapchat | not available | no third-party messaging API |
 
-`orbynth channels` prints this list with each platform's real state on the customer's machine.
+`zyntharo channels` prints this list with each platform's real state on the customer's machine.
 
 ## Platform and hardware
 
@@ -113,5 +113,5 @@ developer tools installed:
 ## Support promise v1
 
 One business-day response by email for installation and workflow failures, with the exact
-diagnostics the app already produces (`orbynth doctor`, the capability matrix, the run's steps).
+diagnostics the app already produces (`zyntharo doctor`, the capability matrix, the run's steps).
 No 24/7 promise until there is staff for it.

@@ -19,7 +19,7 @@ counted separately. Exceptions to a ``blocking`` rule belong in ``tools/reality_
 with a path, a rule and a reason, so an exception is a recorded decision rather than a rule
 quietly weakened.
 
-    python3 tools/reality_gate.py              # scan orbynth/ (the shipped package)
+    python3 tools/reality_gate.py              # scan zyntharo/ (the shipped package)
     python3 tools/reality_gate.py --all        # include tooling and tests (informational)
     python3 tools/reality_gate.py --json
 """

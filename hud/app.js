@@ -1,4 +1,4 @@
-/* ORBYNTH HUD controller.
+/* ZYNTHARO HUD controller.
  *
  * Everything on screen is driven by the bridge protocol. If a live core is reachable the HUD
  * shows truth; if not, it says "DEMO DATA" and replays mock.js. It never blurs the two.
@@ -89,7 +89,7 @@
     if (!alert || !alert.alert_id) return;
     hardwareAlerts.push(alert);
     if (hardwareAlerts.length > 40) hardwareAlerts.shift();
-    window.ORBYNTH_HARDWARE_ALERTS = hardwareAlerts;
+    window.ZYNTHARO_HARDWARE_ALERTS = hardwareAlerts;
     const node = $("hw-alert");
     if (node) {
       node.textContent = alert.severity + " · " + (alert.sensor || "") + " · " + (alert.message || "");
@@ -349,9 +349,9 @@
   };
 
   /* Every topic the backend can emit must appear above. `hud/coverage.json` is generated from
-   * orbynth/events.py and asserted by tests/test_hud.py, so a new subsystem cannot ship
+   * zyntharo/events.py and asserted by tests/test_hud.py, so a new subsystem cannot ship
    * invisible in the interface — which is exactly what happened to the ops layer first time. */
-  window.ORBYNTH_TOPICS = Object.keys(TOPIC_EFFECTS);
+  window.ZYNTHARO_TOPICS = Object.keys(TOPIC_EFFECTS);
 
   /* ------------------------------------------------------------------ chrome signal routing
    * The chrome is fed from the same events as everything else, on two planes: speech energy
@@ -596,7 +596,7 @@
       try {
         handle(JSON.parse(event.data));
       } catch (error) {
-        console.warn("[orbynth] bad frame", error);
+        console.warn("[zyntharo] bad frame", error);
       }
     });
     socket.addEventListener("close", () => {
@@ -613,7 +613,7 @@
         }, 15000);
         return;
       }
-      // A page served without a core — a static preview, or the app before `orbynth hud` starts
+      // A page served without a core — a static preview, or the app before `zyntharo hud` starts
       // — must not sit on "offline" forever with an empty console. After two failed attempts it
       // falls back to demo data and says so on the link plate.
       if (connectAttempts >= 2) return startDemo("no core reachable at " + location.host);
@@ -882,7 +882,7 @@
     if (!container) return;
     const security = state.security || {};
     const rows = [
-      ["owner", security.owner || (security.configured ? "configured" : "NOT configured — run `orbynth owner setup`")],
+      ["owner", security.owner || (security.configured ? "configured" : "NOT configured — run `zyntharo owner setup`")],
       ["session", security.session_valid ? "open" : "locked (PIN required for irreversible work)"],
       ["machine", security.machine_kind || "personal"],
       ["OS user", security.os_user || "—"],
@@ -1218,7 +1218,7 @@
     if (!container) return;
     const machine = state.machine || {};
     const rows = [
-      ["priority", machine.priority || "below_normal", "ORBYNTH runs under your interactive work"],
+      ["priority", machine.priority || "below_normal", "ZYNTHARO runs under your interactive work"],
       ["background", machine.paused ? "paused — " + (machine.busy_reason || machine.reason || "machine busy") : "running", ""],
       ["workers", (machine.worker_cap || 1) + " at a time" + (machine.worker_ceiling ? " (ceiling " + machine.worker_ceiling + ")" : ""), "parallel work admitted before it starts"],
       ["session", machine.session_locked ? "locked" : "unlocked", "input is never injected into a locked desktop"],
@@ -2312,7 +2312,7 @@
       utterance.volume = 0.95;
       window.speechSynthesis.speak(utterance);
     } catch (error) {
-      console.warn("[orbynth] speech failed", error);
+      console.warn("[zyntharo] speech failed", error);
     }
   }
 
@@ -2451,7 +2451,7 @@
       $("chat-input").value = "";
       addTranscript("user", value);
       if (!send("chat", { text: value })) {
-        notice("No core connected — running in demo mode. Start `orbynth hud` to send real instructions.", "warning", false);
+        notice("No core connected — running in demo mode. Start `zyntharo hud` to send real instructions.", "warning", false);
       }
     };
     $("chat-send").addEventListener("click", submit);

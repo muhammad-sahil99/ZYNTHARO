@@ -13,7 +13,7 @@ a desktop app is a public client, so the credential is always the customer's own
 | connector | works after this one step | the honest limit |
 |---|---|---|
 | Mailbox (IMAP/SMTP) | an app password from the provider | Outlook/Microsoft 365 is **refused with the reason**: Microsoft disabled password sign-in, so the Graph connector is the only route |
-| Google (Gmail, Drive, Calendar, Sheets, Tasks, Contacts) | an OAuth client id the customer creates (Desktop app type, ~5 min) | reading mail is a Google *restricted* scope: a publicly distributed app needs Google verification (and a security assessment if mail content leaves the device). ORBYNTH processes mail locally for that reason. Tests run against an injected transport, not a live Google account |
+| Google (Gmail, Drive, Calendar, Sheets, Tasks, Contacts) | an OAuth client id the customer creates (Desktop app type, ~5 min) | reading mail is a Google *restricted* scope: a publicly distributed app needs Google verification (and a security assessment if mail content leaves the device). ZYNTHARO processes mail locally for that reason. Tests run against an injected transport, not a live Google account |
 | Microsoft 365 (Outlook, Calendar, OneDrive, Teams, Excel) | a free app registration in the customer's tenant + device-code sign-in | Teams and organisational mailboxes may need tenant admin consent; Graph throttling is per-resource and surfaces as a wait-and-retry message |
 | Slack, GitHub, Notion, Airtable, Trello, Asana, Jira, HubSpot, Stripe, Dropbox, Zoom, Salesforce, Linear, Discord | a token the customer generates in their own account | no app review is needed for a private token, but some scopes (Slack search, Teams channels, Salesforce API) need a paid plan or admin approval — the provider's own error text is shown verbatim |
 
@@ -41,7 +41,7 @@ pollable state, so the console never freezes waiting on a browser. Three honest 
 
 Instagram, Facebook/Messenger, X, LinkedIn, TikTok, Snapchat and Apple Notes are declared
 `unavailable` with the business gate quoted verbatim, because no amount of code passes a platform
-review. They are not silently missing: `orbynth connectors` prints them with the reason.
+review. They are not silently missing: `zyntharo connectors` prints them with the reason.
 
 ### The reply desk on a mailbox
 
@@ -62,7 +62,7 @@ the same app-password mailbox that works for filing also answers customers. Hone
   working, the wording is not a reply. Configure a real provider before judging draft quality.
 * **“check + draft” caps at 5 messages per press** (hard ceiling 20). That is a cost decision:
   an unread mailbox with thousands of messages must not turn one click into thousands of model
-  calls. Deeper batches belong to `orbynth workflows run` with an explicit `limit`.
+  calls. Deeper batches belong to `zyntharo workflows run` with an explicit `limit`.
 * **Sending from the panel has not been exercised against a live account.** The command path,
   the single-send rule and the wrong-source refusal are tested; the SMTP delivery itself is the
   connector's, and its live acceptance is the mailbox item in `OWNER_REQUIREMENTS.md`.
@@ -75,7 +75,7 @@ the same app-password mailbox that works for filing also answers customers. Hone
 * **Needs the customer's credentials:** Discord needs a bot token from the developer portal.
 * **Not offered, with the reason shown in the app:** Instagram and Messenger (Meta business
   account, reviewed app, messaging permission), X/Twitter DMs (paid API tier), LinkedIn, TikTok
-  and Snapchat (no third-party messaging API). `orbynth channels` prints this list; selecting one
+  and Snapchat (no third-party messaging API). `zyntharo channels` prints this list; selecting one
   raises an error containing the reason rather than pretending to connect.
 * **Replies are never sent unattended.** The reply desk prepares drafts; the owner approves each
   one. This is a product decision, not a missing feature: one wrong automatic message to a customer
@@ -90,7 +90,7 @@ the same app-password mailbox that works for filing also answers customers. Hone
 | 14.2 | OS file-change notifications | freshness comes from a scan; the panel says **from scans only** |
 | 15.1 | MCP client and server | no MCP tools are exposed or consumed |
 | 15.2 | Local REST/WebSocket API, SDKs, remote control from a phone | only the HUD's own local bridge exists |
-| 19 | Signed end-user installer for a machine with no coding environment | `tools/build_windows_bundle.py` and `tools/build_windows_installer.py` reject incomplete/tampered payloads, and `installer/ORBYNTH.iss` defines the Windows installer; release signing and clean-VM acceptance are still required |
+| 19 | Signed end-user installer for a machine with no coding environment | `tools/build_windows_bundle.py` and `tools/build_windows_installer.py` reject incomplete/tampered payloads, and `installer/ZYNTHARO.iss` defines the Windows installer; release signing and clean-VM acceptance are still required |
 | 18 | Mobile handover, phone-as-remote, end-to-end encrypted remote control | not present |
 | 20 | Cloud sync of a per-item subset of memory and permissions | not present |
 

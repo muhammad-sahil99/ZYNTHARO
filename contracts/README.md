@@ -1,6 +1,6 @@
 # contracts/
 
-Every interface ORBYNTH persists or exposes is defined here first, as JSON Schema, and
+Every interface ZYNTHARO persists or exposes is defined here first, as JSON Schema, and
 versioned in `versions.json`. The code implements these; it does not define them.
 
 | file | holds |
@@ -10,7 +10,7 @@ versioned in `versions.json`. The code implements these; it does not define them
 | `versions.json` | the version of each contract, its status, and who reads and writes it |
 | `generated/` | TypeScript and C# bindings produced from the schemas |
 
-Generated Python bindings live at `orbynth/contracts/generated.py` so they import as part of
+Generated Python bindings live at `zyntharo/contracts/generated.py` so they import as part of
 the package. Regenerate all three with:
 
 ```bash
@@ -34,7 +34,7 @@ entries, events, memory records and task contracts produced by the running syste
    and keep reading the old format for one release.
 4. Run `python3 tools/contracts.py` and commit the regenerated bindings with the schema.
 
-A version mismatch at runtime is decided by `orbynth/contracts/compat.py`: the same major is
+A version mismatch at runtime is decided by `zyntharo/contracts/compat.py`: the same major is
 readable (a newer minor only warns), a different major is refused with the migration named,
 and an unparsable or unknown contract name is refused. Plugins declare the versions they were
 written against in their manifest, and the loader refuses an incompatible one at install time.

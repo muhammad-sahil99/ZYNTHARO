@@ -16,10 +16,10 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from orbynth.actions import localsearch  # noqa: E402
-from orbynth.actions.registry import ActionContext  # noqa: E402
-from orbynth.config import expand_capabilities  # noqa: E402
-from orbynth.ops.index import SearchIndex  # noqa: E402
+from zyntharo.actions import localsearch  # noqa: E402
+from zyntharo.actions.registry import ActionContext  # noqa: E402
+from zyntharo.config import expand_capabilities  # noqa: E402
+from zyntharo.ops.index import SearchIndex  # noqa: E402
 
 
 class IndexCase(unittest.TestCase):

@@ -1,10 +1,10 @@
 {
-  "name": "orbynth-whatsapp-sidecar",
+  "name": "zyntharo-whatsapp-sidecar",
   "version": "1.0.0",
   "private": true,
-  "description": "ORBYNTH WhatsApp sidecar: JSON-RPC over stdio, one paired session, no UI.",
+  "description": "ZYNTHARO WhatsApp sidecar: JSON-RPC over stdio, one paired session, no UI.",
   "main": "sidecar.js",
-  "bin": { "orbynth-whatsapp": "sidecar.js" },
+  "bin": { "zyntharo-whatsapp": "sidecar.js" },
   "scripts": {
     "check": "node --check sidecar.js"
   },

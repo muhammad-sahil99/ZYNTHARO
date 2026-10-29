@@ -15,7 +15,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from orbynth.ops.catalog import (  # noqa: E402
+from zyntharo.ops.catalog import (  # noqa: E402
     ACTIVE,
     RETIRED,
     CatalogEntry,
@@ -24,7 +24,7 @@ from orbynth.ops.catalog import (  # noqa: E402
     check_provider_models,
     sign_catalog,
 )
-from orbynth.ops.governor import (  # noqa: E402
+from zyntharo.ops.governor import (  # noqa: E402
     BACKGROUND,
     CRITICAL,
     GAME,
@@ -33,7 +33,7 @@ from orbynth.ops.governor import (  # noqa: E402
     BusySignal,
     ResponsivenessGovernor,
 )
-from orbynth.ops.languages import (  # noqa: E402
+from zyntharo.ops.languages import (  # noqa: E402
     RTL,
     detect,
     direction_of,
@@ -42,8 +42,8 @@ from orbynth.ops.languages import (  # noqa: E402
     ocr_languages,
     profile_for,
 )
-from orbynth.ops.owner import OwnerRegistry  # noqa: E402
-from orbynth.ops.preflight import (  # noqa: E402
+from zyntharo.ops.owner import OwnerRegistry  # noqa: E402
+from zyntharo.ops.preflight import (  # noqa: E402
     DEFER,
     RUN_BACKGROUND,
     RUN_ISOLATED,
@@ -53,8 +53,8 @@ from orbynth.ops.preflight import (  # noqa: E402
     Preflight,
     TaskRequirements,
 )
-from orbynth.ops.supervisor import EXITED, RUNNING, STOPPED, Supervisor  # noqa: E402
-from orbynth.ops.verification import (  # noqa: E402
+from zyntharo.ops.supervisor import EXITED, RUNNING, STOPPED, Supervisor  # noqa: E402
+from zyntharo.ops.verification import (  # noqa: E402
     HARMLESS,
     IRREVERSIBLE,
     MET,
@@ -70,7 +70,7 @@ from orbynth.ops.verification import (  # noqa: E402
 
 
 def temp_home() -> str:
-    return tempfile.mkdtemp(prefix="orbynth-ops-")
+    return tempfile.mkdtemp(prefix="zyntharo-ops-")
 
 
 class SupervisorTests(unittest.TestCase):
@@ -125,7 +125,7 @@ class SupervisorTests(unittest.TestCase):
         report = second.start()
         self.assertTrue(report["terminated"], report)
         self.assertIn("survivor", [entry["name"] for entry in report["terminated"]])
-        from orbynth.ops.supervisor import _pid_alive
+        from zyntharo.ops.supervisor import _pid_alive
 
         deadline = time.time() + 5
         while time.time() < deadline and _pid_alive(job.pid):
@@ -170,7 +170,7 @@ class SupervisorTests(unittest.TestCase):
         first._stop.set()
         first.shutting_down = True
         # The supervisor died; the helper did not, so kill it to leave a "process gone" entry.
-        from orbynth.ops.supervisor import _terminate_tree
+        from zyntharo.ops.supervisor import _terminate_tree
 
         _terminate_tree(job.pid, job.pgid, force=True)
         first._procs[job.job_id].wait(timeout=5)
@@ -214,7 +214,7 @@ class PreflightTests(unittest.TestCase):
         # The bug this pins down: audio_device used to be filled from the screen-width metric,
         # so a machine with no sound hardware looked ready for voice work. The probe must ask
         # an audio question; off Windows it is simply not consulted.
-        from orbynth.ops.preflight import _windows_audio_available
+        from zyntharo.ops.preflight import _windows_audio_available
 
         self.assertIsInstance(_windows_audio_available(), bool)
         state = MachineState.detect()
@@ -422,7 +422,7 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(verdict.status, MET)
 
     def test_a_request_writes_down_what_it_expects_to_touch(self):
-        from orbynth.ops.verification import capabilities_from_request, contract_for_request
+        from zyntharo.ops.verification import capabilities_from_request, contract_for_request
 
         caps = capabilities_from_request("download the invoice PDFs, rename them and delete the duplicates")
         self.assertIn("filesystem.write", caps)
@@ -512,7 +512,7 @@ class CatalogTests(unittest.TestCase):
         self.assertFalse(tampered.verify(hmac_key="shared-secret").ok)
 
     def test_apply_updates_limits_and_removes_retired_models(self):
-        from orbynth.config import default_config, load_config
+        from zyntharo.config import default_config, load_config
 
         home = temp_home()
         config = default_config()
@@ -529,7 +529,7 @@ class CatalogTests(unittest.TestCase):
         self.assertNotIn("gemini:gemini-1.0-legacy", [m.qualified for m in reloaded.all_models()])
 
     def test_apply_refuses_while_work_is_in_flight(self):
-        from orbynth.config import default_config
+        from zyntharo.config import default_config
 
         home = temp_home()
         config = default_config()
@@ -543,7 +543,7 @@ class CatalogTests(unittest.TestCase):
             gate.apply(config, in_flight=1)
 
     def test_rollback_restores_the_previous_configuration(self):
-        from orbynth.config import default_config, load_config
+        from zyntharo.config import default_config, load_config
 
         home = temp_home()
         config = default_config()
@@ -556,7 +556,7 @@ class CatalogTests(unittest.TestCase):
         self.assertIsNotNone(load_config(config.config_path).model("gemini:gemini-2.5-pro"))
 
     def test_rollback_works_from_a_later_process(self):
-        from orbynth.config import default_config, load_config
+        from zyntharo.config import default_config, load_config
 
         home = temp_home()
         config = default_config()
@@ -574,7 +574,7 @@ class CatalogTests(unittest.TestCase):
         self.assertIsNone(later.rollback(config), "a consumed snapshot was reused")
 
     def test_drift_check_reports_retired_ids_and_unreachable_providers(self):
-        from orbynth.config import default_config
+        from zyntharo.config import default_config
 
         config = default_config()
         report = check_provider_models(config, fetch=lambda base, key, kind="": ["gemini-2.5-flash"])
@@ -587,10 +587,10 @@ class CatalogTests(unittest.TestCase):
         self.assertTrue(offline["unreachable"])
 
     def test_custom_provider_with_base_url_and_quotas_is_applied(self):
-        from orbynth.config import ProviderConfig, load_config
+        from zyntharo.config import ProviderConfig, load_config
 
         home = temp_home()
-        from orbynth.config import default_config
+        from zyntharo.config import default_config
 
         config = default_config()
         config.home = home
@@ -650,7 +650,7 @@ class GovernorTests(unittest.TestCase):
 
     def test_pause_and_resume_are_reported_once_each(self):
         events: list[str] = []
-        from orbynth.events import EventBus, GOVERNOR_PAUSED, GOVERNOR_RESUMED
+        from zyntharo.events import EventBus, GOVERNOR_PAUSED, GOVERNOR_RESUMED
 
         bus = EventBus()
         bus.subscribe(GOVERNOR_PAUSED, lambda e: events.append("paused"))
@@ -750,27 +750,27 @@ class LanguageTests(unittest.TestCase):
 
 class PlanningTests(unittest.TestCase):
     def test_capacity_prefers_explicit_setting_then_conservative_default(self):
-        from orbynth.agents.planning import probe_capacity
+        from zyntharo.agents.planning import probe_capacity
 
         self.assertEqual(probe_capacity(env={}, configured=0, total_items=10).per_wave, 3)
-        self.assertEqual(probe_capacity(env={"ORBYNTH_AGENT_PARALLELISM": "1"}, total_items=10).per_wave, 1)
-        plan = probe_capacity(env={"ORBYNTH_AGENT_PARALLELISM": "1"}, total_items=9)
+        self.assertEqual(probe_capacity(env={"ZYNTHARO_AGENT_PARALLELISM": "1"}, total_items=10).per_wave, 1)
+        plan = probe_capacity(env={"ZYNTHARO_AGENT_PARALLELISM": "1"}, total_items=9)
         self.assertFalse(plan.parallel)
         self.assertEqual(plan.waves, 9)
         self.assertIn("sequential", plan.source)
-        capped = probe_capacity(env={"ORBYNTH_AGENT_PARALLELISM": "999"}, total_items=40)
+        capped = probe_capacity(env={"ZYNTHARO_AGENT_PARALLELISM": "999"}, total_items=40)
         self.assertLessEqual(capped.per_wave, 12)
 
     def test_waves_are_chunked_in_order(self):
-        from orbynth.agents.planning import plan_waves
+        from zyntharo.agents.planning import plan_waves
 
         waves = plan_waves(list(range(7)), 3)
         self.assertEqual([len(w) for w in waves], [3, 3, 1])
         self.assertEqual([item for wave in waves for item in wave], list(range(7)))
 
     def test_run_waves_falls_back_to_sequential_without_parallel_capacity(self):
-        from orbynth.agents.planning import run_waves
-        from orbynth.events import EventBus
+        from zyntharo.agents.planning import run_waves
+        from zyntharo.events import EventBus
 
         class FakeItem:
             def __init__(self, name):
@@ -785,7 +785,7 @@ class PlanningTests(unittest.TestCase):
 
         class FakeOrchestrator:
             def __init__(self):
-                from orbynth.config import default_config
+                from zyntharo.config import default_config
 
                 self.config = default_config()
                 self.bus = EventBus()
@@ -795,16 +795,16 @@ class PlanningTests(unittest.TestCase):
                 self.calls.append((item.name, wait))
                 return FakeReport(item.name)
 
-        previous = os.environ.get("ORBYNTH_NO_PARALLEL")
-        os.environ["ORBYNTH_NO_PARALLEL"] = "1"
+        previous = os.environ.get("ZYNTHARO_NO_PARALLEL")
+        os.environ["ZYNTHARO_NO_PARALLEL"] = "1"
         try:
             orchestrator = FakeOrchestrator()
             result = run_waves(orchestrator, "do four things", [FakeItem(f"i{n}") for n in range(4)], bus=orchestrator.bus)
         finally:
             if previous is None:
-                os.environ.pop("ORBYNTH_NO_PARALLEL", None)
+                os.environ.pop("ZYNTHARO_NO_PARALLEL", None)
             else:
-                os.environ["ORBYNTH_NO_PARALLEL"] = previous
+                os.environ["ZYNTHARO_NO_PARALLEL"] = previous
         self.assertEqual([c[0] for c in orchestrator.calls], ["i0", "i1", "i2", "i3"])
         self.assertTrue(all(call[1] for call in orchestrator.calls), "sequential mode must wait for each item")
         self.assertIn("wave", result["reports"][0])
@@ -812,7 +812,7 @@ class PlanningTests(unittest.TestCase):
         self.assertFalse(result["plan"]["parallel"])
 
     def test_milestones_are_declared_with_exit_criteria(self):
-        from orbynth.agents.planning import MILESTONES
+        from zyntharo.agents.planning import MILESTONES
 
         ids = [m["id"] for m in MILESTONES]
         self.assertEqual(ids, ["M0", "M1", "M2", "M3", "M4", "GA"])
@@ -823,7 +823,7 @@ class SpawnTests(unittest.TestCase):
     def test_a_launched_helper_remembers_the_supervisor_that_owns_it(self):
         # terminate() used to look the supervisor up in a module global, so a second
         # supervisor -- a restart, or a test -- meant stopping the wrong process book.
-        from orbynth.ops.spawn import Launched, managed_popen, set_supervisor
+        from zyntharo.ops.spawn import Launched, managed_popen, set_supervisor
 
         supervisor = Supervisor(temp_home(), poll_interval=5.0)
         supervisor.start(reconcile=False)
@@ -846,13 +846,13 @@ class SpawnTests(unittest.TestCase):
 
 class RegistryOwnerGateTests(unittest.TestCase):
     def test_gate_is_off_by_default_and_on_when_requested(self):
-        from orbynth.actions import filesystem
-        from orbynth.actions.registry import ActionContext, ActionRegistry
-        from orbynth.config import default_config, expand_capabilities
-        from orbynth.events import EventBus
+        from zyntharo.actions import filesystem
+        from zyntharo.actions.registry import ActionContext, ActionRegistry
+        from zyntharo.config import default_config, expand_capabilities
+        from zyntharo.events import EventBus
         import tempfile as _temp
 
-        home = _temp.mkdtemp(prefix="orbynth-gate-")
+        home = _temp.mkdtemp(prefix="zyntharo-gate-")
         registry = ActionRegistry()
         registry.register_module(filesystem)
         registry.owner = OwnerRegistry(home)
@@ -883,10 +883,10 @@ class AuditFixTests(unittest.TestCase):
         They used to: ``model.assign`` and ``memory.admin`` demanded a PIN but were tiered as
         routine work, so the two systems held different beliefs about the same action.
         """
-        from orbynth.actions.registry import OWNER_IRREVERSIBLE
-        from orbynth.ops import verification
-        from orbynth.ops.owner import IRREVERSIBLE_CAPABILITIES as owner_list
-        from orbynth.ops.risk import IRREVERSIBLE_CAPABILITIES as canonical
+        from zyntharo.actions.registry import OWNER_IRREVERSIBLE
+        from zyntharo.ops import verification
+        from zyntharo.ops.owner import IRREVERSIBLE_CAPABILITIES as owner_list
+        from zyntharo.ops.risk import IRREVERSIBLE_CAPABILITIES as canonical
 
         self.assertEqual(canonical, frozenset(owner_list))
         self.assertEqual(canonical, frozenset(OWNER_IRREVERSIBLE))
@@ -937,7 +937,7 @@ class AuditFixTests(unittest.TestCase):
 
     def test_supervisor_journal_never_records_helper_environment_values(self):
         """A helper's environment can hold a provider key; the journal is plain text."""
-        home = tempfile.mkdtemp(prefix="orbynth-journal-")
+        home = tempfile.mkdtemp(prefix="zyntharo-journal-")
         supervisor = Supervisor(home, poll_interval=5.0)
         try:
             job = supervisor.spawn(

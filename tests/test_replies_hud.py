@@ -18,9 +18,9 @@ import os
 import tempfile
 import unittest
 
-from orbynth.channels.base import ChannelMessage
-from orbynth.hud.service import HudService
-from orbynth.workflows.reply_desk import PENDING, SENT, ReplyDesk
+from zyntharo.channels.base import ChannelMessage
+from zyntharo.hud.service import HudService
+from zyntharo.workflows.reply_desk import PENDING, SENT, ReplyDesk
 from tests.helpers import Stack
 
 
@@ -122,7 +122,7 @@ class RepliesPanelTests(unittest.TestCase):
         self.assertEqual(len(self.desk.pending()), 3)
 
     def test_a_refused_source_is_reported_as_a_message_not_a_crash(self):
-        from orbynth.workflows import mailbox
+        from zyntharo.workflows import mailbox
 
         def refuse(connectors, name="mail", **options):
             raise RuntimeError("Mailbox (IMAP/SMTP) is not ready (needs_setup): No mailbox connected.")
