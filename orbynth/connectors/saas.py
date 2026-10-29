@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .base import AUTH_KEY_TOKEN, AUTH_TOKEN, Connector, ConnectorError, Operation, READY
+from .base import AUTH_KEY_TOKEN, AUTH_TOKEN, Connector, ConnectorError, Field, Operation, READY
 from .transport import fill_path, request_json
 
 READ = "connector.read"
@@ -414,6 +414,25 @@ class SaasConnector(Connector):
         return (override or self.spec.base_url).rstrip("/")
 
     # -- contract ---------------------------------------------------------------------
+    def fields(self) -> list[Field]:
+        """The inputs the settings screen renders, derived from the declared auth style.
+
+        Derived, not guessed: the same ``style`` that builds the auth header decides what the
+        customer is asked for, so a new service cannot be added with a form that does not match
+        the calls it will make.
+        """
+        if self.spec.style == "query":
+            return [
+                Field(self.spec.key_name, f"{self.title} API key", hint=self.where),
+                Field(self.spec.token_field, f"{self.title} token"),
+            ]
+        if self.spec.style == "basic":
+            return [
+                Field("email", "Account email", secret=False),
+                Field(self.spec.token_field, f"{self.title} API token", hint=self.where),
+            ]
+        return [Field("token", f"{self.title} API token", hint=self.where)]
+
     def operations(self) -> list[Operation]:
         return [op.to_operation(self.name) for op in self.spec.operations]
 

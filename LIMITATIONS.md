@@ -23,6 +23,22 @@ headers and body. **No connector has yet been exercised against a live paid acco
 build** — that acceptance run needs the customer's own credentials and is listed in
 `OWNER_REQUIREMENTS.md`.
 
+### Signing in, and what the panel can and cannot promise
+
+The HUD's Accounts panel connects everything a pasted credential can connect, and starts the two
+consent flows (Google's PKCE loopback, Microsoft's device code) in a background thread with a
+pollable state, so the console never freezes waiting on a browser. Three honest limits:
+
+* **A stored credential is not a working account.** The row says `configured` until the provider
+  itself confirms it; only `verify` (or a successful connect) turns it `ready`.
+* **The consent screens themselves are unverified here.** The session logic, scope profiles, token
+  writing and failure paths are covered by tests with injected flow functions; a real Google
+  consent or a real Microsoft code has not been completed in this build because that needs an
+  owner's account.
+* **Scope choice decides the review burden.** Reading Gmail is a restricted scope, so the profile is
+  labelled with that consequence instead of asking for it silently. Teams channel scopes usually
+  need a tenant admin; the panel offers the smaller `files` profile for exactly that reason.
+
 Instagram, Facebook/Messenger, X, LinkedIn, TikTok, Snapchat and Apple Notes are declared
 `unavailable` with the business gate quoted verbatim, because no amount of code passes a platform
 review. They are not silently missing: `orbynth connectors` prints them with the reason.

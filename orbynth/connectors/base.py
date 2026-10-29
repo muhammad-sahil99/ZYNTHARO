@@ -84,6 +84,30 @@ class Operation:
 
 
 @dataclass(slots=True)
+class Field:
+    """One value the customer has to supply before an account works.
+
+    Declared rather than inferred from the prose in ``needs``: the settings screen renders exactly
+    these inputs, and a connector that wants something else does not exist. ``secret`` decides
+    masking in the interface only — the vault masks everything it prints regardless, because a
+    field being "not secret" is not permission to write it into a log.
+
+    ``signin`` is the honest third option: the value is not typed at all, it comes back from an
+    interactive consent (Google's loopback flow, Microsoft's device code).
+    """
+
+    name: str
+    label: str
+    secret: bool = True
+    hint: str = ""
+    required: bool = True
+    signin: bool = False
+
+    def to_json(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class Connection:
     """What the customer typed in, kept in the local vault and never logged."""
 
@@ -134,6 +158,10 @@ class Connector:
         """Prove the credential works against the real service. Default: report only."""
         return self.status()
 
+    def fields(self) -> list[Field]:
+        """Exactly what the interface must ask for. A connector with no fields takes none."""
+        return []
+
     # -- helpers ----------------------------------------------------------------------
     def _status(self, state: str, detail: str, account: str = "") -> ConnectorStatus:
         connection = self.connection
@@ -180,6 +208,7 @@ def describe_catalogue(connectors: list[Connector]) -> dict[str, Any]:
                 "where": connector.where,
                 "docs": connector.docs,
                 "operation_list": [op.to_json() for op in connector.operations()],
+                "fields": [f.to_json() for f in connector.fields()],
             }
         )
     grouped: dict[str, list[dict[str, Any]]] = {}

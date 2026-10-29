@@ -192,6 +192,7 @@
   <aside id="side-panels" class="panel stack right">
     <nav class="tabs">
       <button data-tab="transcript" class="tab active">Transcript</button>
+      <button data-tab="connectors" class="tab">Accounts</button>
       <button data-tab="quota" class="tab">Quotas</button>
       <button data-tab="plugins" class="tab">Plugins</button>
       <button data-tab="actions" class="tab">Actions</button>
@@ -219,6 +220,26 @@
     <section data-panel="quota" class="tab-panel">
       <p class="hint">Per-model envelopes the Steward manages — rpm / rpd / tpm / tpd. Amber means nearly spent, red means exhausted or cooling down.</p>
       <div id="quota-table" class="table"></div>
+    </section>
+
+    <section data-panel="connectors" class="tab-panel">
+      <p class="hint">Your own accounts. A credential is typed here once and kept in the local vault — encrypted with your Windows account on this machine — and only turns green when the provider itself confirms it. The fleet can <em>read</em> and <em>prepare</em>; anything that sends (mail, a message, a post) waits for you, because a delivered message cannot be recalled. Accounts whose platform requires a business review are listed with that gate quoted instead of an empty promise.</p>
+      <div class="row">
+        <span id="connector-summary" class="sig-value">—</span>
+        <button id="connector-refresh" class="pill tiny">refresh</button>
+      </div>
+      <div id="connectors" class="plugins"></div>
+      <div id="connector-form" class="panel-foot">
+        <select id="connector-provider" class="hidden" title="Which mail provider"></select>
+        <div id="connector-fields" class="row"></div>
+        <select id="connector-profile" class="hidden" title="What to ask the provider for"></select>
+        <button id="connector-connect" class="pill tiny hidden">connect</button>
+        <button id="connector-signin-btn" class="pill tiny hidden">sign in</button>
+        <span id="connector-form-note" class="sig-value">Select an account above to connect it.</span>
+      </div>
+      <div id="connector-detail" class="table"></div>
+      <div id="connector-signin" class="table"></div>
+      <div id="connector-gates" class="log"></div>
     </section>
 
     <section data-panel="plugins" class="tab-panel">

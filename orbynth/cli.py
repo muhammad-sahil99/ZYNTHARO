@@ -455,6 +455,7 @@ def build_stack(
             presence=presence_controller,
             lessons=lesson_book,
             scheduler=scheduler,
+            connectors=connector_registry,
         )
         hud.forge = forge  # type: ignore[attr-defined]
         if voice is not None:

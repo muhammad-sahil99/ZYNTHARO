@@ -35,6 +35,7 @@ from .base import (
     AUTH_PASSWORD,
     Connector,
     ConnectorError,
+    Field,
     NotConfigured,
     Operation,
     READY,
@@ -223,6 +224,27 @@ class MailConnector(Connector):
         return client
 
     # -- contract --------------------------------------------------------------------
+    def fields(self) -> list[Field]:
+        """A known provider asks for two values; an unknown one also asks for the hosts.
+
+        Gmail, iCloud, Yahoo, Zoho, Fastmail and GMX have documented hostnames, so asking a
+        customer for them would be noise. ``generic`` has no defaults, so it asks — and the
+        connector refuses at login time if they are missing rather than guessing a host.
+        """
+        provider = self.provider
+        fields = [
+            Field("address", "Mailbox address", secret=False),
+            Field("password", "App password", hint=provider.note),
+        ]
+        if not provider.imap_host or not provider.smtp_host:
+            fields += [
+                Field("imap_host", "IMAP host", secret=False),
+                Field("imap_port", "IMAP port", secret=False, required=False, hint="993"),
+                Field("smtp_host", "SMTP host", secret=False),
+                Field("smtp_port", "SMTP port", secret=False, required=False, hint="587"),
+            ]
+        return fields
+
     def operations(self) -> list[Operation]:
         return [
             Operation("list_folders", "Every folder and its message count.", path="imap", method="IMAP"),

@@ -41,6 +41,10 @@
     // queued work and the failure patterns learned from this machine
     schedule: null,
     lessons: null,
+    // the customer's own accounts: what is connected, what a row can do, and any live sign-in
+    connectors: null,
+    connectorSpec: null,
+    connectorResult: null,
     searchHits: [],
     scene: null,
     // 3D explanation window: the renderer is driven by the main animation loop, so closing the
@@ -669,6 +673,27 @@
         if (message.command === "confirm") removeConfirmation(message.result && message.result.action);
         if (message.command === "state.request") refreshState();
         if (message.command === "hw.query") { state.hardware = Object.assign({}, state.hardware, { attached: true, sensors: message.result && message.result.sensors }); renderHardware(); }
+        if (message.command === "connector.spec") {
+          state.connectorSpec = message.result || null;
+          renderConnectorDetail();
+        }
+        if (message.command === "connector.connect" || message.command === "connector.verify") {
+          const result = message.result || {};
+          notice(result.name + ": " + (result.state || "unknown") + " — " + (result.detail || ""), result.state === "ready" ? "info" : "warning", false);
+          if (state.connectorSpec && state.connectorSpec.connector === result.name) {
+            state.connectorSpec.status = result;
+            renderConnectorDetail();
+          }
+        }
+        if (message.command === "connector.disconnect") {
+          const result = message.result || {};
+          notice(result.disconnected ? "Disconnected " + result.connector + " — its credential is out of the vault." : "Nothing to disconnect for " + result.connector + ".", "info", false);
+          if (state.connectorSpec && state.connectorSpec.connector === result.connector) state.connectorSpec = null;
+        }
+        if (message.command === "connector.call") {
+          state.connectorResult = message.result || null;
+          renderConnectorDetail();
+        }
         if (message.command === "index.search") {
           state.searchHits = (message.result && message.result.hits) || [];
           renderSearchHits();
@@ -727,6 +752,7 @@
     if (snapshot.preflight) state.preflight = snapshot.preflight;
     if (snapshot.comms) state.comms = snapshot.comms;
     if (snapshot.reserves) state.reserves = snapshot.reserves;
+    if (snapshot.connectors) state.connectors = snapshot.connectors;
     if (snapshot.presence) state.presence = snapshot.presence;
     if (snapshot.schedule) state.schedule = snapshot.schedule;
     if (snapshot.lessons) state.lessons = snapshot.lessons;
@@ -753,6 +779,7 @@
     renderCapabilities();
     renderComms();
     renderReserves();
+    renderConnectors();
     renderPresence();
     renderSchedule();
     renderLessons();
@@ -1314,6 +1341,290 @@
       container.appendChild(node);
     });
     renderChrome();
+  }
+
+  /* ------------------------------------------------- connected accounts (connectors) */
+  /* The panel is driven by two sources of truth: the registry's state (which is local vault
+   * facts) and the per-account spec fetched when a row is opened (which is what that account can
+   * actually do). Nothing here assumes an account exists because a logo is familiar. */
+  let signinTimer = null;
+
+  function connectorStateClass(state) {
+    if (state === "ready") return "";
+    if (state === "configured") return " warn";
+    if (state === "unavailable") return " muted";
+    return " bad";
+  }
+
+  function renderConnectors() {
+    const container = $("connectors");
+    if (!container) return;
+    const data = state.connectors || {};
+    container.innerHTML = "";
+    const summary = $("connector-summary");
+    if (!data.attached) {
+      if (summary) summary.textContent = data.note || "the connector registry is not attached";
+      container.innerHTML = '<p class="hint">' + escapeHtml(data.note || "no connector registry in this build") + "</p>";
+      renderConnectorGates();
+      return;
+    }
+    if (summary) {
+      summary.textContent =
+        (data.ready || 0) + " connected · " + (data.needs_setup || 0) + " waiting for setup · " +
+        (data.total || 0) + " offered";
+    }
+    (data.rows || []).forEach((row) => {
+      const node = document.createElement("div");
+      node.className = "plugin" + connectorStateClass(row.state);
+      const auth = row.auth ? " · " + row.auth : "";
+      const account = row.account ? " · " + row.account : "";
+      const when = row.verified_at ? " · verified " + new Date(row.verified_at * 1000).toLocaleString() : "";
+      node.innerHTML =
+        '<div class="p-name" dir="auto">' + escapeHtml(row.title || row.name) +
+        ' <span class="chip">' + escapeHtml(row.category || "account") + '</span>' +
+        ' <span class="chip">' + escapeHtml(row.state || "unknown") + "</span></div>" +
+        '<div class="p-meta" dir="auto">' + escapeHtml(row.name) + auth + account + when + " · " +
+        (row.operations || 0) + " operations</div>" +
+        '<div class="p-meta" dir="auto">' + escapeHtml(row.detail || "") + "</div>" +
+        (row.state === "unavailable"
+          ? '<div class="p-meta" dir="auto">not reachable by software: see the gate below</div>'
+          : '<div class="row"><button class="pill tiny" data-conn="' + escapeHtml(row.name) + '" data-act="open">open</button>' +
+            '<button class="pill tiny" data-conn="' + escapeHtml(row.name) + '" data-act="verify">verify</button>' +
+            (row.state === "needs_setup" ? "" : '<button class="pill tiny" data-conn="' + escapeHtml(row.name) + '" data-act="disconnect">disconnect</button>') +
+            "</div>");
+      container.appendChild(node);
+    });
+    renderConnectorDetail();
+    renderConnectorSignin();
+    renderConnectorGates();
+  }
+
+  function renderConnectorGates() {
+    const box = $("connector-gates");
+    if (!box) return;
+    const gates = (state.connectors && state.connectors.unavailable) || {};
+    box.innerHTML = "";
+    const names = Object.keys(gates);
+    if (!names.length) return;
+    box.innerHTML = '<p class="hint">Platforms this build cannot reach, with the real gate rather than an excuse:</p>';
+    names.forEach((name) => {
+      const line = document.createElement("div");
+      line.className = "p-meta";
+      line.setAttribute("dir", "auto");
+      line.textContent = name + " — " + gates[name];
+      box.appendChild(line);
+    });
+  }
+
+  function renderConnectorDetail() {
+    const box = $("connector-detail");
+    if (!box) return;
+    box.innerHTML = "";
+    const spec = state.connectorSpec;
+    if (!spec) {
+      box.innerHTML = '<p class="hint">Open an account to see exactly what it can do, what it needs, and which of its actions would wait for you.</p>';
+      renderConnectorForm();
+      return;
+    }
+    const status = spec.status || {};
+    const rows = [
+      ["account", spec.title || spec.connector, ""],
+      ["state", (status.state || "unknown") + " — " + (status.detail || ""), /ready/.test(status.state || "") ? "" : "warning"],
+      ["needs", spec.needs || "", ""],
+      ["where", spec.where || "", ""],
+      ["docs", spec.docs || "", ""],
+    ];
+    rows.forEach(([key, value, cls]) => {
+      const row = document.createElement("div");
+      row.className = "trow" + (cls ? " " + cls : "");
+      row.innerHTML = '<span class="m">' + escapeHtml(key) + '</span>' +
+        '<span style="grid-column: span 4" dir="auto">' + escapeHtml(value) + "</span>";
+      box.appendChild(row);
+    });
+    const ops = spec.operations || [];
+    if (!ops.length) {
+      const note = document.createElement("p");
+      note.className = "hint";
+      note.textContent = spec.detail || "No operation list is declared for this account.";
+      box.appendChild(note);
+    }
+    ops.forEach((op) => {
+      const node = document.createElement("div");
+      node.className = "plugin" + (op.capability === "connector.send" ? " bad" : "");
+      node.innerHTML =
+        '<div class="p-name" dir="auto">' + escapeHtml(op.name) +
+        ' <span class="chip">' + escapeHtml(op.capability || "connector.read") + "</span></div>" +
+        '<div class="p-meta" dir="auto">' + escapeHtml(op.description || "") + "</div>" +
+        '<div class="p-meta" dir="auto">' + escapeHtml(op.method || "") + " · " + escapeHtml(op.path || "") +
+        (op.capability === "connector.send" ? " · sending waits for your PIN" : "") + "</div>" +
+        '<div class="row"><button class="pill tiny" data-conn="' + escapeHtml(spec.connector) + '" data-op="' +
+        escapeHtml(op.name) + '">run once</button></div>';
+      box.appendChild(node);
+    });
+    const result = state.connectorResult;
+    if (result && result.connector === spec.connector) {
+      const node = document.createElement("div");
+      node.className = "trow";
+      node.innerHTML = '<span class="m">last call</span><span style="grid-column: span 4" dir="auto">' +
+        escapeHtml(result.operation + ": " + JSON.stringify(result.result).slice(0, 600)) + "</span>";
+      box.appendChild(node);
+    }
+    renderConnectorForm();
+  }
+
+  /* The form is built from the connector's declared fields, never from a hardcoded list in the
+   * interface: a connector that wants a different value would otherwise show a form that does not
+   * match it, which is how a settings screen starts lying. */
+  function renderConnectorForm() {
+    const fields = $("connector-fields");
+    const note = $("connector-form-note");
+    const provider = $("connector-provider");
+    const profile = $("connector-profile");
+    const connect = $("connector-connect");
+    const signin = $("connector-signin-btn");
+    if (!fields || !note || !provider || !profile || !connect || !signin) return;
+    const spec = state.connectorSpec;
+    fields.innerHTML = "";
+    provider.innerHTML = "";
+    profile.innerHTML = "";
+    provider.classList.add("hidden");
+    profile.classList.add("hidden");
+    connect.classList.add("hidden");
+    signin.classList.add("hidden");
+    if (!spec) {
+      note.textContent = "Select an account above to connect it.";
+      return;
+    }
+    if (spec.state === "unavailable") {
+      note.textContent = "This platform cannot be connected in this build — the gate is quoted below the list.";
+      return;
+    }
+    if (spec.connector === "mail") {
+      ((state.connectors && state.connectors.mail_providers) || []).forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.key;
+        option.textContent = item.title + (item.supported_here ? "" : " — needs OAuth, not an app password");
+        option.disabled = !item.supported_here;
+        provider.appendChild(option);
+      });
+      if (state.connectorProvider) provider.value = state.connectorProvider;
+      provider.classList.remove("hidden");
+    }
+    (spec.fields || []).forEach((field) => {
+      if (field.signin) return;
+      const label = document.createElement("label");
+      label.className = "menu-item";
+      label.innerHTML = escapeHtml(field.label) + (field.required === false ? " (optional)" : "") +
+        (field.hint ? '<span class="p-meta" dir="auto">' + escapeHtml(field.hint) + "</span>" : "");
+      const input = document.createElement("input");
+      input.type = field.secret ? "password" : "text";
+      input.dataset.connField = field.name;
+      input.placeholder = field.name;
+      label.appendChild(input);
+      fields.appendChild(label);
+    });
+    connect.classList.remove("hidden");
+    const signinFields = (spec.fields || []).filter((field) => field.signin);
+    if (signinFields.length && (spec.signin_profiles || []).length) {
+      spec.signin_profiles.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.key;
+        option.textContent = item.label + (item.restricted ? " (needs provider review for public release)" : "");
+        profile.appendChild(option);
+      });
+      profile.classList.remove("hidden");
+      signin.classList.remove("hidden");
+    }
+    note.textContent = "Values are stored locally and never shown again. An account turns green only when the provider confirms it.";
+  }
+
+  function renderConnectorSignin() {
+    const box = $("connector-signin");
+    if (!box) return;
+    box.innerHTML = "";
+    const sessions = (state.connectors && state.connectors.signin) || [];
+    sessions.forEach((session) => {
+      const row = document.createElement("div");
+      row.className = "trow" + (session.stage === "failed" ? " warning" : "");
+      const parts = [session.stage, session.instruction, session.user_code, session.url, session.detail]
+        .filter((part) => part && String(part).trim());
+      row.innerHTML = '<span class="m" dir="auto">' + escapeHtml(session.connector) + '</span>' +
+        '<span style="grid-column: span 4" dir="auto">' + escapeHtml(parts.join(" · ")) + "</span>";
+      box.appendChild(row);
+    });
+    const live = sessions.some((session) => session.stage === "waiting" || session.stage === "preparing");
+    if (live && !signinTimer) {
+      signinTimer = window.setInterval(() => send("connector.signin", { connector: "google", action: "status" }) &&
+        send("connector.signin", { connector: "microsoft", action: "status" }), 3000);
+    }
+    if (!live && signinTimer) { window.clearInterval(signinTimer); signinTimer = null; }
+  }
+
+  function bindConnectors() {
+    const container = $("connectors");
+    if (container) {
+      container.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-conn]");
+        if (!button) return;
+        const name = button.dataset.conn;
+        const act = button.dataset.act || "open";
+        if (act === "open") {
+          state.connectorSpec = null;
+          state.connectorResult = null;
+          send("connector.spec", { connector: name });
+          return;
+        }
+        if (act === "verify") send("connector.verify", { connector: name });
+        if (act === "disconnect") send("connector.disconnect", { connector: name });
+      });
+    }
+    const refresh = $("connector-refresh");
+    if (refresh) refresh.addEventListener("click", () => refreshState());
+    const detail = $("connector-detail");
+    if (detail) {
+      detail.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-op]");
+        if (!button) return;
+        const spec = state.connectorSpec || {};
+        const values = {};
+        document.querySelectorAll("[data-conn-field]").forEach((input) => {
+          if (input.value) values[input.dataset.connField] = input.value;
+        });
+        send("connector.call", { connector: button.dataset.conn, operation: button.dataset.op, args: values });
+      });
+    }
+    const form = $("connector-form");
+    if (form) {
+      form.addEventListener("change", (event) => {
+        // The connector decides what it needs for the chosen provider, so changing the mailbox
+        // asks the connector again instead of the interface guessing which fields to hide.
+        if (event.target.id === "connector-provider") {
+          const spec = state.connectorSpec || {};
+          state.connectorProvider = event.target.value;
+          send("connector.spec", { connector: spec.connector, provider: event.target.value });
+        }
+      });
+      form.addEventListener("click", (event) => {
+        const spec = state.connectorSpec || {};
+        if (event.target.id === "connector-connect") {
+          const values = {};
+          document.querySelectorAll("[data-conn-field]").forEach((input) => {
+            if (input.value) values[input.dataset.connField] = input.value;
+          });
+          const meta = {};
+          const provider = $("connector-provider");
+          if (provider && provider.value) meta.provider = provider.value;
+          if (!Object.keys(values).length) { notice("Fill in at least one field first.", "warning", false); return; }
+          send("connector.connect", { connector: spec.connector, values: values, meta: meta });
+          document.querySelectorAll("[data-conn-field]").forEach((input) => { input.value = ""; });
+          return;
+        }
+        if (event.target.id === "connector-signin-btn") {
+          const profile = $("connector-profile");
+          send("connector.signin", { connector: spec.connector, action: "start", profile: profile ? profile.value : "" });
+        }
+      });
+    }
   }
 
   /* ------------------------------------------- capability matrix (spec 4.7) */
@@ -2154,6 +2465,7 @@
     bindMenu();
     bindChat();
     bindButtons();
+    bindConnectors();
     coreState("initialising", "link established");
     if (!core.ok) {
       $("core-sub").textContent = "WebGL unavailable — running in reduced mode";

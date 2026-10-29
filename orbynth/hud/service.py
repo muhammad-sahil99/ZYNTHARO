@@ -36,6 +36,7 @@ class HudService:
         orchestrator: Any = None,
         plugins: Any = None,
         voice: Any = None,
+        connectors: Any = None,
         static_dir: str | Path | None = None,
         supervisor: Any = None,
         owner: Any = None,
@@ -61,6 +62,10 @@ class HudService:
         self.orchestrator = orchestrator
         self.plugins = plugins
         self.voice = voice
+        #: The customer's own outside accounts (mail, drives, calendar, chat, CRM, code, payments).
+        #: The settings screen is the only place a credential is typed; it goes straight into the
+        #: local vault and is proven against the real service before the row turns green.
+        self.connectors = connectors
         # The operational layer, so the interface can show it instead of hiding it (22.1-22.11).
         self.supervisor = supervisor
         self.owner = owner
@@ -163,6 +168,7 @@ class HudService:
             "search": self._search_snapshot(),
             "comms": self._comms_snapshot(),
             "reserves": self._reserves_snapshot(),
+            "connectors": self._connectors_snapshot(),
             "presence": self._presence_snapshot(),
             "lessons": self.lessons.stats() | {"top": self.lessons.top(6)} if self.lessons is not None else {"lessons": 0, "note": "lesson book not attached"},
             "schedule": self.scheduler.snapshot() if self.scheduler is not None else {"count": 0, "note": "scheduler not attached"},
@@ -205,6 +211,79 @@ class HudService:
             "reserve_count": sum(1 for r in rows if r.get("reserve")),
             "active_count": sum(1 for r in rows if not r.get("reserve")),
         }
+
+    def _connectors_snapshot(self) -> dict[str, Any]:
+        """The connected-accounts screen, painted from the vault and nothing else.
+
+        Deliberately no network call happens while building this: statuses are local facts about
+        stored credentials. A screen refresh must never be able to lock an account or make the
+        interface slow, and the one call that *does* touch the service (``verify``) is a button
+        the customer presses.
+
+        The per-connector operation lists are left out on purpose — this payload is rebuilt on
+        every state push, and the full list is fetched per account by ``connector.spec`` when a
+        row is opened.
+        """
+        if self.connectors is None:
+            return {
+                "attached": False,
+                "rows": [],
+                "note": "no connector registry is attached to this build",
+            }
+        try:
+            catalogue = self.connectors.catalogue()
+        except Exception as exc:  # a broken registry must look broken, not empty
+            return {
+                "attached": False,
+                "rows": [],
+                "note": f"the connector registry failed: {type(exc).__name__}: {exc}",
+            }
+        rows: list[dict[str, Any]] = []
+        for entries in (catalogue.get("categories") or {}).values():
+            for entry in entries:
+                rows.append(
+                    {
+                        key: entry.get(key)
+                        for key in (
+                            "name",
+                            "title",
+                            "category",
+                            "state",
+                            "detail",
+                            "auth",
+                            "account",
+                            "verified_at",
+                            "operations",
+                            "needs",
+                            "where",
+                            "docs",
+                        )
+                    }
+                )
+        rows.sort(key=lambda row: (row.get("state") != "ready", row.get("category") or "", row.get("name") or ""))
+        return {
+            "attached": True,
+            "rows": rows,
+            "total": catalogue.get("total", len(rows)),
+            "ready": catalogue.get("ready", 0),
+            "needs_setup": catalogue.get("needs_setup", 0),
+            "unavailable": catalogue.get("unavailable") or {},
+            "mail_providers": catalogue.get("mail_providers") or [],
+            "vault": catalogue.get("vault") or {},
+            "connected": catalogue.get("connected") or [],
+            "signin_profiles": catalogue.get("signin_profiles") or {},
+            "signin": self._signin_sessions(),
+        }
+
+    def _signin_sessions(self) -> list[dict[str, Any]]:
+        """Live consent sessions. Empty when nothing is being signed in, which is the normal case."""
+        manager = getattr(self.connectors, "signin", None) if self.connectors is not None else None
+        if manager is None:
+            return []
+        try:
+            return manager.sessions()
+        except Exception:  # noqa: BLE001 - a broken session list must not blank the screen
+            return []
 
     def _security_snapshot(self) -> dict[str, Any]:
         owner = self.owner
@@ -346,6 +425,12 @@ class HudService:
             "index.sources": lambda _m: self.index.sources() if self.index else [],
             "capability.matrix": lambda _m: self._capability_snapshot(),
             "audit": self._audit,
+            "connector.spec": self._connector_spec,
+            "connector.connect": self._connector_connect,
+            "connector.verify": self._connector_verify,
+            "connector.disconnect": self._connector_disconnect,
+            "connector.call": self._connector_call,
+            "connector.signin": self._connector_signin,
         }.get(kind)
         if handler is None:
             raise ValueError(f"unknown HUD command: {kind}")
@@ -487,6 +572,193 @@ class HudService:
             "camera": view.to_json(),
             "people": self.speakers.rows() if self.speakers is not None else [],
         }
+
+    # ----------------------------------------------------------------------------------
+    # Connected accounts. The interface may connect them because it is the owner's own screen;
+    # an agent still cannot (`connector.admin`), because a credential typed into a chat window is
+    # not a consent gesture. No value is ever echoed back, logged or put in an event payload.
+    # ----------------------------------------------------------------------------------
+    def _connector_registry(self) -> Any:
+        if self.connectors is None:
+            raise ValueError("no connector registry is attached to this build")
+        return self.connectors
+
+    def _connector_name(self, message: dict[str, Any]) -> str:
+        name = str(message.get("connector", "")).strip().lower()
+        if not name:
+            raise ValueError("which account? pass connector=<name>")
+        return name
+
+    def _connector_spec(self, message: dict[str, Any]) -> dict[str, Any]:
+        """One account's full surface, fetched only when a row is opened.
+
+        This is where the customer reads the two lists that matter: what this account can do, and
+        which of those operations sends something (and therefore needs their PIN).
+        """
+        from ..connectors.base import ConnectorError
+
+        name = self._connector_name(message)
+        provider = str(message.get("provider", "")).strip().lower()
+        try:
+            target = self._connector_registry().get(name, provider)
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
+        except ConnectorError as exc:  # Unsupported carries the business gate as its text
+            return {
+                "connector": name,
+                "state": "unavailable",
+                "detail": str(exc),
+                "operations": [],
+            }
+        manager = getattr(self.connectors, "signin", None)
+        profiles = manager.profiles(target.name) if manager is not None else []
+        return {
+            "connector": target.name,
+            "title": target.title,
+            "category": target.category,
+            "auth": target.auth,
+            "needs": target.needs,
+            "where": target.where,
+            "docs": target.docs,
+            "status": target.status().to_json(),
+            "fields": [f.to_json() for f in target.fields()],
+            "signin_profiles": profiles,
+            "operations": [op.to_json() for op in target.operations()],
+        }
+
+    def _connector_connect(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Store what the customer typed, then make the service itself prove it.
+
+        The row only turns green if the provider agrees — a stored key is ``configured``, and the
+        interface keeps saying so until ``verify`` succeeds. On failure the credential is kept, so
+        fixing a typo does not mean retyping every field.
+        """
+        from ..connectors.base import ConnectorError
+
+        name = self._connector_name(message)
+        values = message.get("values") or {}
+        if not isinstance(values, dict) or not any(str(v).strip() for v in values.values()):
+            raise ValueError("at least one field value is required")
+        meta = message.get("meta") if isinstance(message.get("meta"), dict) else {}
+        try:
+            status = self._connector_registry().connect(
+                name, {str(k): str(v) for k, v in values.items()}, {str(k): str(v) for k, v in meta.items()}
+            )
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
+        except ConnectorError as exc:
+            self.bus.emit(
+                HUD_NOTICE, source="connectors", severity="warning", message=f"{name}: {exc}", speak=False
+            )
+            raise ValueError(str(exc)) from exc
+        data = status.to_json()
+        self._announce_connector(status)
+        return data
+
+    def _connector_verify(self, message: dict[str, Any]) -> dict[str, Any]:
+        from ..connectors.base import ConnectorError
+
+        name = self._connector_name(message)
+        try:
+            status = self._connector_registry().verify(name)
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
+        except ConnectorError as exc:
+            # Reported as a row state rather than a protocol error: the customer needs the
+            # provider's own words next to the field they have to fix, not a red toast.
+            self.bus.emit(
+                HUD_NOTICE, source="connectors", severity="warning", message=f"{name} failed verification: {exc}", speak=False
+            )
+            return {"name": name, "state": "needs_setup", "detail": str(exc), "auth": "", "account": "", "operations": 0}
+        data = status.to_json()
+        self._announce_connector(status)
+        return data
+
+    def _connector_disconnect(self, message: dict[str, Any]) -> dict[str, Any]:
+        name = self._connector_name(message)
+        removed = bool(self._connector_registry().disconnect(name))
+        self.bus.emit(
+            HUD_NOTICE,
+            source="connectors",
+            severity="info" if removed else "notice",
+            message=(
+                f"disconnected {name}: the credential is gone from the vault"
+                if removed
+                else f"nothing to disconnect for {name}"
+            ),
+            speak=False,
+        )
+        self.bridge.push_state()
+        return {"connector": name, "disconnected": removed}
+
+    def _connector_signin(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Start, poll or cancel an interactive consent for a connector that needs one.
+
+        Returns immediately in every case: the flow runs in its own thread and the panel polls
+        ``connector.signin`` with ``action=status``. A browser consent that blocked the interface
+        thread would freeze the console for up to four minutes, which is not a trade this project
+        makes.
+        """
+        from ..connectors.base import ConnectorError
+
+        name = self._connector_name(message)
+        manager = getattr(self._connector_registry(), "signin", None)
+        if manager is None:
+            raise ValueError("interactive sign-in is not available in this build")
+        action = str(message.get("action", "status")).strip() or "status"
+        try:
+            if action == "start":
+                session = manager.start(name, str(message.get("profile", "")), float(message.get("timeout", 240.0)))
+                self.bus.emit(
+                    HUD_NOTICE,
+                    source="connectors",
+                    severity="info",
+                    message=f"{name}: sign-in started — {session.instruction}",
+                    speak=False,
+                )
+                self.bridge.push_state()
+                return session.to_json()
+            if action == "cancel":
+                cancelled = manager.cancel(name)
+                self.bridge.push_state()
+                return {"connector": name, "cancelled": cancelled}
+            session = manager.status(name)
+            return session.to_json() if session is not None else {"connector": name, "stage": "idle"}
+        except ConnectorError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def _connector_call(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Run one operation from the owner's own screen — the "test it now" button.
+
+        Agents reach the same operations through the capability-gated actions, where the
+        operation's declared permission is checked against the caller's grant. Here the caller is
+        the owner at their own keyboard, so the check is that the operation exists at all.
+        """
+        from ..connectors.base import ConnectorError
+
+        name = self._connector_name(message)
+        operation = str(message.get("operation", "")).strip()
+        if not operation:
+            raise ValueError("an operation name is required")
+        args = message.get("args") if isinstance(message.get("args"), dict) else {}
+        try:
+            result = self._connector_registry().call(name, operation, **args)
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
+        except ConnectorError as exc:
+            raise ValueError(f"{name}.{operation} failed: {exc}") from exc
+        return {"connector": name, "operation": operation, "result": result}
+
+    def _announce_connector(self, status: Any) -> None:
+        severity = "info" if getattr(status, "state", "") == "ready" else "warning"
+        self.bus.emit(
+            HUD_NOTICE,
+            source="connectors",
+            severity=severity,
+            message=f"{status.name}: {status.state} — {status.detail}",
+            speak=False,
+        )
+        self.bridge.push_state()
 
     def _voice_ptt(self, message: dict[str, Any]) -> dict[str, Any]:
         if self.voice is None:

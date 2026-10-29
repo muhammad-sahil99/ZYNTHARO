@@ -157,6 +157,12 @@ orbynth connectors          # every outside account, its state, and its operatio
 orbynth connectors verify --connector slack
 ```
 
+The same thing lives in the app: the **Accounts** panel lists every outside account, asks for exactly
+the fields that account declares, stores them in the local vault, and turns a row green only when the
+provider confirms the credential. Google and Microsoft are completed with a sign-in (a consent
+screen or a device code) started from that panel; nothing there ships a client secret, and anything
+that sends — mail, a message, a post — still waits for you.
+
 - **Invoice intake** files every new invoice by year and quarter and records it once in an Excel
   ledger. Re-running it is free: identical content is skipped by hash.
 - **Reply desk** collects customer messages and prepares replies; **nothing is sent until the

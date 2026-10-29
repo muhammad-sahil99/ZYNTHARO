@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
-from .base import AUTH_OAUTH, Connector, ConnectorError, Operation, READY, AUTH_NONE
+from .base import AUTH_OAUTH, AUTH_NONE, Connector, ConnectorError, Field, Operation, READY
 from .transport import HttpError, request_json
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -95,11 +95,17 @@ def authorize(
     port: int = 0,
     open_browser: bool = True,
     timeout: float = 180.0,
+    on_url: Any = None,
 ) -> dict[str, Any]:
     """Run the PKCE loopback flow and return a token set.
 
     Raises :class:`ConnectorError` with the provider's own error text when Google refuses, and a
     clear timeout message when the customer never finishes the consent screen.
+
+    ``on_url`` is called with the consent address before the browser is opened. A graphical front
+    end needs it for the case where ``webbrowser.open`` silently does nothing (a headless session,
+    a locked-down default browser): the customer can then copy the link instead of waiting for a
+    window that never appears.
     """
     if not client_id.strip():
         raise ConnectorError(
@@ -125,6 +131,11 @@ def authorize(
         }
     )
     url = f"{AUTH_URL}?{query}"
+    if on_url is not None:
+        try:
+            on_url(url)
+        except Exception:  # noqa: BLE001 - reporting the address must not break the flow
+            pass
     if open_browser:
         try:
             import webbrowser
@@ -262,6 +273,17 @@ class GoogleConnector(Connector):
             raise
 
     # -- contract ---------------------------------------------------------------------
+    def fields(self) -> list[Field]:
+        """One typed value (the client id) and one consent this app cannot type for you.
+
+        The tokens are marked ``signin`` so no screen ever shows a field for them: they are
+        returned by Google's consent flow and written straight to the vault.
+        """
+        return [
+            Field("client_id", "OAuth client id (Desktop app type)", secret=False, hint=self.where),
+            Field("refresh_token", "Consent from your Google account", signin=True, required=False),
+        ]
+
     def operations(self) -> list[Operation]:
         return [
             Operation("whoami", "Which Google account is connected, and which scopes were granted."),

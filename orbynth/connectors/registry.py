@@ -34,6 +34,7 @@ from .google import GoogleConnector
 from .mail import MailConnector, provider_list
 from .microsoft import MicrosoftConnector
 from .saas import SPECS, SaasConnector
+from .signin import SignInManager
 from .store import Vault
 
 #: Gates that are not about code. Each is quoted to the customer as-is.
@@ -57,9 +58,13 @@ class ConnectorRegistry:
     def __init__(self, vault: Vault | None = None, home: str = ""):
         self.vault = vault or Vault(home or os.environ.get("ORBYNTH_HOME", ""))
         self._extra_status: dict[str, ConnectorStatus] = {}
+        #: The two connectors that finish with a consent screen rather than a pasted value. The
+        #: manager lives here so the interface has one object to ask and one place sessions are
+        #: kept — a second copy would drift on which profiles exist.
+        self.signin = SignInManager(self)
 
     # -- construction -----------------------------------------------------------------
-    def _factory(self, name: str) -> Connector:
+    def _factory(self, name: str, provider: str = "") -> Connector:
         key = str(name).strip().lower()
         connection = self.vault.get(key)
         if key == "google":
@@ -67,7 +72,9 @@ class ConnectorRegistry:
         elif key == "microsoft":
             connector = MicrosoftConnector(connection)
         elif key == "mail":
-            connector = MailConnector(connection)
+            # ``provider`` lets the settings screen ask "which mailbox?" before the form is built,
+            # so a Gmail user is never shown IMAP host fields they do not have to know about.
+            connector = MailConnector(connection, provider=provider)
         else:
             spec = next((s for s in SPECS if s.name == key), None)
             if spec is None:
@@ -86,8 +93,8 @@ class ConnectorRegistry:
     def connected_names(self) -> list[str]:
         return sorted(self.vault.load())
 
-    def get(self, name: str) -> Connector:
-        return self._factory(name)
+    def get(self, name: str, provider: str = "") -> Connector:
+        return self._factory(name, provider)
 
     # -- state ------------------------------------------------------------------------
     def statuses(self) -> list[ConnectorStatus]:
@@ -136,6 +143,9 @@ class ConnectorRegistry:
             "note": self.vault.protection_note,
         }
         data["connected"] = self.vault.summary()
+        data["signin_profiles"] = {
+            name: self.signin.profiles(name) for name in ("google", "microsoft")
+        }
         return data
 
     # -- mutation ---------------------------------------------------------------------
@@ -175,6 +185,10 @@ class ConnectorRegistry:
     # -- calls ------------------------------------------------------------------------
     def call(self, name: str, operation: str, **args: Any) -> Any:
         connector = self._factory(name)
+        # Validate the operation *before* the readiness check: "that operation does not exist" and
+        # "this account is not connected" are different problems, and reporting the second when
+        # the first is true sends the customer to connect an account they may already have.
+        connector._operation(operation)
         status = connector.status()
         if status.state != READY:
             raise ConnectorError(

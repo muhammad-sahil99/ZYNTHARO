@@ -24,7 +24,7 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
-from .base import AUTH_DEVICE, Connector, ConnectorError, Operation
+from .base import AUTH_DEVICE, Connector, ConnectorError, Field, Operation
 from .transport import AuthError, HttpError, request_json
 
 GRAPH = "https://graph.microsoft.com/v1.0"
@@ -228,6 +228,24 @@ class MicrosoftConnector(Connector):
             raise
 
     # -- contract ---------------------------------------------------------------------
+    def fields(self) -> list[Field]:
+        """The client id and tenant are typed; the token set arrives from the device-code sign-in.
+
+        ``tenant`` defaults to ``common`` and is only needed when a company requires sign-in from
+        one directory, which is exactly the case where guessing it would be wrong.
+        """
+        return [
+            Field("client_id", "Application (client) id", secret=False, hint=self.where),
+            Field(
+                "tenant",
+                "Directory (tenant) id or domain",
+                secret=False,
+                required=False,
+                hint="leave blank for 'common'",
+            ),
+            Field("refresh_token", "Sign-in from your Microsoft account", signin=True, required=False),
+        ]
+
     def operations(self) -> list[Operation]:
         return [
             Operation("whoami", "Which mailbox and tenant this connection belongs to."),
