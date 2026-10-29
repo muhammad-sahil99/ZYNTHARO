@@ -52,6 +52,8 @@ class HudService:
         presence: Any = None,
         lessons: Any = None,
         scheduler: Any = None,
+        replies: Any = None,
+        channels: Any = None,
     ):
         self.config = config
         self.bus = bus
@@ -86,6 +88,11 @@ class HudService:
         #: What the system has learned from its own failures, and the work queued for later.
         self.lessons = lessons
         self.scheduler = scheduler
+        #: The reply desk (drafts waiting for the owner) and the chat channels it can read. A
+        #: mailbox is not a channel; it is reached through ``self.connectors`` when a draft names
+        #: one, which is why both registries are attached here.
+        self.replies = replies
+        self.channels = channels
         #: Recent outcome checks and preflight decisions, newest first.
         self.verdicts: list[dict[str, Any]] = []
         self.preflight_log: list[dict[str, Any]] = []
@@ -169,6 +176,7 @@ class HudService:
             "comms": self._comms_snapshot(),
             "reserves": self._reserves_snapshot(),
             "connectors": self._connectors_snapshot(),
+            "replies": self._replies_snapshot(),
             "presence": self._presence_snapshot(),
             "lessons": self.lessons.stats() | {"top": self.lessons.top(6)} if self.lessons is not None else {"lessons": 0, "note": "lesson book not attached"},
             "schedule": self.scheduler.snapshot() if self.scheduler is not None else {"count": 0, "note": "scheduler not attached"},
@@ -284,6 +292,59 @@ class HudService:
             return manager.sessions()
         except Exception:  # noqa: BLE001 - a broken session list must not blank the screen
             return []
+
+    def _replies_snapshot(self) -> dict[str, Any]:
+        """Drafts waiting for the owner, and what has already been decided.
+
+        This is the human end of the reply desk: the model prepares, the owner sends. Reading it
+        never touches the network — drafts are local rows — so opening the panel cannot mark a
+        mailbox message as read or trip a rate limit.
+        """
+        desk = self.replies
+        if desk is None:
+            return {
+                "attached": False,
+                "pending": [],
+                "history": [],
+                "note": "the reply desk is not attached to this build",
+            }
+        try:
+            pending = desk.pending(limit=50)
+            history = desk.history(limit=30)
+        except Exception as exc:  # a broken store must look broken, not empty
+            return {
+                "attached": False,
+                "pending": [],
+                "history": [],
+                "note": f"the reply desk could not be read: {type(exc).__name__}: {exc}",
+            }
+        decided = [row for row in history if row.get("status") != "pending_approval"]
+        return {
+            "attached": True,
+            "pending": pending,
+            "history": decided[:20],
+            "counts": {
+                "pending": len(pending),
+                "sent": sum(1 for row in decided if row.get("status") == "sent"),
+                "rejected": sum(1 for row in decided if row.get("status") == "rejected"),
+                "failed": sum(1 for row in decided if row.get("status") == "send_failed"),
+            },
+            "sources": self._reply_sources(),
+        }
+
+    def _reply_sources(self) -> list[dict[str, Any]]:
+        """Which sources could be read right now, and the reason for each that cannot."""
+        rows: list[dict[str, Any]] = []
+        if self.connectors is not None:
+            try:
+                status = self.connectors.get("mail").status()
+                rows.append({"name": "mail", **status.to_json()})
+            except Exception as exc:  # noqa: BLE001 - the panel shows the failure
+                rows.append({"name": "mail", "state": "needs_setup", "detail": f"mailbox check failed: {exc}"})
+        if self.channels is not None:
+            for status in self.channels.statuses():
+                rows.append({"name": status.name, **status.to_json()})
+        return rows
 
     def _security_snapshot(self) -> dict[str, Any]:
         owner = self.owner
@@ -431,6 +492,11 @@ class HudService:
             "connector.disconnect": self._connector_disconnect,
             "connector.call": self._connector_call,
             "connector.signin": self._connector_signin,
+            "reply.pending": lambda _m: self._replies_snapshot(),
+            "reply.check": self._reply_check,
+            "reply.edit": self._reply_edit,
+            "reply.approve": self._reply_approve,
+            "reply.reject": self._reply_reject,
         }.get(kind)
         if handler is None:
             raise ValueError(f"unknown HUD command: {kind}")
@@ -764,6 +830,149 @@ class HudService:
         if self.voice is None:
             raise ValueError("voice subsystem is not attached")
         return self.voice.push_to_talk(bool(message.get("down", True)))
+
+    # ----------------------------------------------------------------------------------
+    # The reply desk at the owner's screen: collect, read, change, send or discard
+    # ----------------------------------------------------------------------------------
+    def _desk(self) -> Any:
+        if self.replies is None:
+            raise ValueError("the reply desk is not attached to this build")
+        return self.replies
+
+    def _reply_delivery(self, name: str) -> Any:
+        """The thing a reply leaves through: the mailbox, or a chat channel."""
+        key = str(name or "mail").strip().lower()
+        if key in {"mail", "mailbox", "email"}:
+            from ..workflows.mailbox import source_for
+
+            try:
+                return source_for(self.connectors)
+            except RuntimeError as exc:  # the connector's own sentence, e.g. "not connected yet"
+                raise ValueError(str(exc)) from exc
+        if self.channels is None:
+            raise ValueError("no channel registry is attached to this build")
+        try:
+            return self.channels.get(key)
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def _reply_check(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Read the chosen source and prepare replies — one model call per new message.
+
+        Bounded on purpose: ``limit`` caps how many messages one press may draft, because a
+        mailbox with 2,000 unread messages must not become a 2,000-call bill from one click.
+        """
+        desk = self._desk()
+        source = self._reply_delivery(str(message.get("channel", "mail")))
+        limit = max(1, min(int(message.get("limit", 5) or 5), 20))
+        drafter = self._reply_drafter() if self.runtime is not None else None
+        try:
+            result = desk.run(source, drafter=drafter, limit=limit)
+        except Exception as exc:  # a workflow reports, it does not take the interface down
+            raise ValueError(f"the reply desk could not run: {type(exc).__name__}: {exc}") from exc
+        payload = result.to_json()
+        payload["drafted_with"] = (
+            "the fleet's model" if drafter is not None else "nobody — no model runtime is attached, so only collection ran"
+        )
+        self.bus.emit(
+            HUD_NOTICE,
+            source="reply-desk",
+            severity="info" if result.counts.get("drafted") else "notice",
+            message=result.summary,
+            speak=False,
+        )
+        self.bridge.push_state()
+        return payload
+
+    def _reply_drafter(self) -> Callable[[dict[str, Any]], str]:
+        return self._compose_reply
+
+    def _compose_reply(self, row: dict[str, Any]) -> str:
+        """Ask the fleet's model for one reply, from one message.
+
+        The prompt states the constraint that matters: return the reply text only. A model that
+        answers with "Here is a draft reply:" produces a draft the owner has to clean up every
+        time, which is worse than no assistance.
+        """
+        from ..llm.providers import LLMRequest, Message
+
+        if self.runtime is None:
+            return ""
+        system = (
+            "You write replies on behalf of a small business owner. Be brief, warm and specific. "
+            "Answer the question that was asked, and do not invent facts, prices or dates that are "
+            "not in the message. Return only the reply body: no subject line, no greeting header, "
+            "no commentary about being an assistant."
+        )
+        prompt = (
+            f"From: {row.get('sender', '')}\n"
+            f"Subject: {row.get('subject', '')}\n\n"
+            f"{row.get('text', '')}"
+        )
+        request = LLMRequest(
+            messages=[Message(role="system", content=system), Message(role="user", content=prompt)],
+            model="",
+            temperature=0.3,
+            max_tokens=500,
+        )
+        result = self.runtime.run(request, agent_id="reply-desk")
+        return str(result.response.text or "").strip()
+
+    def _reply_edit(self, message: dict[str, Any]) -> dict[str, Any]:
+        from ..workflows.base import WorkflowError
+
+        draft_id = int(message.get("draft_id", 0) or 0)
+        if not draft_id:
+            raise ValueError("a draft id is required")
+        try:
+            row = self._desk().edit(draft_id, str(message.get("reply", "")))
+        except WorkflowError as exc:
+            raise ValueError(str(exc)) from exc
+        self.bridge.push_state()
+        return row
+
+    def _reply_approve(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Send one approved draft through its own source, exactly once.
+
+        This is the owner's own act on their own screen, which is why it is allowed here while an
+        agent still cannot send (`channel.send` is refused to agents). The draft's channel decides
+        the delivery, so approving a mail draft can never post to a chat platform.
+        """
+        from ..workflows.base import WorkflowError
+
+        draft_id = int(message.get("draft_id", 0) or 0)
+        if not draft_id:
+            raise ValueError("a draft id is required")
+        desk = self._desk()
+        row = next((draft for draft in desk.pending(limit=200) if int(draft["id"]) == draft_id), None)
+        if row is None:
+            raise ValueError(f"draft {draft_id} is not waiting for approval")
+        try:
+            result = desk.approve(draft_id, self._reply_delivery(str(row.get("channel", ""))))
+        except WorkflowError as exc:
+            raise ValueError(str(exc)) from exc
+        self.bus.emit(
+            HUD_NOTICE,
+            source="reply-desk",
+            severity="info",
+            message=f"sent reply {draft_id} to {row.get('chat', '')}",
+            speak=False,
+        )
+        self.bridge.push_state()
+        return result
+
+    def _reply_reject(self, message: dict[str, Any]) -> dict[str, Any]:
+        from ..workflows.base import WorkflowError
+
+        draft_id = int(message.get("draft_id", 0) or 0)
+        if not draft_id:
+            raise ValueError("a draft id is required")
+        try:
+            result = self._desk().reject(draft_id, str(message.get("reason", "discarded from the interface")))
+        except WorkflowError as exc:
+            raise ValueError(str(exc)) from exc
+        self.bridge.push_state()
+        return result
 
     def _speech_decision(self, text: str, severity: str = "info") -> dict[str, Any]:
         """Ask the etiquette layer whether this may be said out loud.

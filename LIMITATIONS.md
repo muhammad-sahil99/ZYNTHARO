@@ -57,6 +57,15 @@ the same app-password mailbox that works for filing also answers customers. Hone
 * **`unseen_only` is the default.** A mailbox that marks messages read elsewhere will therefore
   contribute nothing; that is deliberate (answering every old email on first run is worse) and is
   a parameter, not a hidden setting.
+* **The Replies panel drafts with whatever model the fleet has.** With only the built-in `echo`
+  provider configured, the draft is the echo provider's acknowledgement text — the panel is
+  working, the wording is not a reply. Configure a real provider before judging draft quality.
+* **“check + draft” caps at 5 messages per press** (hard ceiling 20). That is a cost decision:
+  an unread mailbox with thousands of messages must not turn one click into thousands of model
+  calls. Deeper batches belong to `orbynth workflows run` with an explicit `limit`.
+* **Sending from the panel has not been exercised against a live account.** The command path,
+  the single-send rule and the wrong-source refusal are tested; the SMTP delivery itself is the
+  connector's, and its live acceptance is the mailbox item in `OWNER_REQUIREMENTS.md`.
 
 ## Channels: what is offered and what is refused
 

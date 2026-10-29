@@ -461,6 +461,8 @@ def build_stack(
             lessons=lesson_book,
             scheduler=scheduler,
             connectors=connector_registry,
+            replies=reply_desk,
+            channels=channel_registry,
         )
         hud.forge = forge  # type: ignore[attr-defined]
         if voice is not None:

@@ -130,6 +130,22 @@
         sources: [{ name: "documents", kind: "files", root: "C:/Users/Owner/Documents", enabled: 1, opt_in: 0 }],
         capabilities: { lexical: true, semantic: false, ocr: true, pdf: true, file_watch: false }
       },
+      replies: {
+        attached: true,
+        pending: [
+          { id: 41, channel: "mail", chat: "dana@example.com", subject: "Invoice 2026-03", status: "pending_approval", created_at: now() - 620, sender: "Dana Reed <dana@example.com>", inbound_text: "Hello, invoice 2026-03 is still unpaid. Could you confirm whether it reached you?", reply: "Hi Dana — it did arrive, and it is scheduled for payment on Friday. I will send you the confirmation once it clears." },
+          { id: 42, channel: "telegram", chat: "8812334", subject: "", status: "pending_approval", created_at: now() - 300, sender: "acme_ops", inbound_text: "Can you send the March statement as a PDF today?", reply: "Yes — sending the March statement as a PDF this afternoon." },
+        ],
+        history: [
+          { id: 38, channel: "mail", chat: "sam@example.org", subject: "Change of address", status: "sent", decided_at: now() - 7200, error: "" },
+          { id: 37, channel: "mail", chat: "dana@example.com", subject: "Invoice 2026-02", status: "rejected", decided_at: now() - 9000, error: "discarded from the interface" },
+        ],
+        counts: { pending: 2, sent: 1, rejected: 1, failed: 0 },
+        sources: [
+          { name: "mail", state: "ready", detail: "Gmail / Google Workspace as owner@example.com", auth: "app_password", account: "owner@example.com", verified_at: now() - 86400, operations: 7 },
+          { name: "telegram", state: "needs_setup", detail: "Create a bot with @BotFather, then set the token.", auth: "api_token", account: "", verified_at: 0, operations: 0 },
+        ],
+      },
       connectors: {
         attached: true,
         total: 4, ready: 2, needs_setup: 1,

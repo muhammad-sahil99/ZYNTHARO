@@ -59,6 +59,7 @@ Read the three markers literally:
 | Workflows: reply desk (durable outbox, mandatory approval, wrong-platform refusal) | done | `tests/test_workflows.py` |
 | Workflows: reply desk on a **connected mailbox** (search+read through the mail connector, folder-namespaced dedupe, threaded `Re:` replies, unreadable messages reported) | done as code; needs the customer's mailbox connected to run live | `orbynth/workflows/mailbox.py`, `orbynth/workflows/reply_desk.py`, `tests/test_mailbox_desk.py` |
 | Reply desk store upgrade (adds `subject` in place; existing pending drafts kept) | done | `orbynth/workflows/reply_desk.py` (`_migrate`), `tests/test_mailbox_desk.py` |
+| HUD: Replies panel (drafts waiting for the owner, inbound text beside the proposal, edit / send / discard, decision history, source picker) | done; drafting runs on the fleet's model, sending needs a live account | `hud/index.html`, `hud/app.js`, `orbynth/hud/service.py` (`reply.*`), `tests/test_replies_hud.py` |
 | Workflows: recurring report (docx + xlsx, totals read back) | done | `tests/test_workflows.py` |
 | Channels: Telegram Bot API (send, poll, offset, platform errors) | partial — transport verified against a real local Bot API server; a live bot needs the owner's token | `tests/test_workflows.py` (`TelegramChannelTests`) |
 | Channels: WhatsApp sidecar adapter | partial | adapter refuses when unpaired; live pairing acceptance pending |

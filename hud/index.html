@@ -192,6 +192,7 @@
   <aside id="side-panels" class="panel stack right">
     <nav class="tabs">
       <button data-tab="transcript" class="tab active">Transcript</button>
+      <button data-tab="replies" class="tab">Replies</button>
       <button data-tab="connectors" class="tab">Accounts</button>
       <button data-tab="quota" class="tab">Quotas</button>
       <button data-tab="plugins" class="tab">Plugins</button>
@@ -220,6 +221,18 @@
     <section data-panel="quota" class="tab-panel">
       <p class="hint">Per-model envelopes the Steward manages — rpm / rpd / tpm / tpd. Amber means nearly spent, red means exhausted or cooling down.</p>
       <div id="quota-table" class="table"></div>
+    </section>
+
+    <section data-panel="replies" class="tab-panel">
+      <p class="hint">Drafts waiting for <strong>you</strong>. Nothing here has been sent: the fleet reads and prepares, you edit and send. A draft can only leave through the source it came from, so a mail reply cannot be posted to a chat by mistake, and sending twice is refused. One press drafts at most a handful of messages — a mailbox with 2,000 unread emails must not become a 2,000-call bill.</p>
+      <div class="row">
+        <span id="reply-summary" class="sig-value">—</span>
+        <select id="reply-source" title="Which source to read"></select>
+        <button id="reply-check" class="pill tiny">check + draft</button>
+        <button id="reply-refresh" class="pill tiny">refresh</button>
+      </div>
+      <div id="replies" class="plugins"></div>
+      <div id="reply-history" class="table"></div>
     </section>
 
     <section data-panel="connectors" class="tab-panel">

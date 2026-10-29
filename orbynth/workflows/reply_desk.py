@@ -216,6 +216,25 @@ class ReplyDesk(Workflow):
             )
         return {"draft_id": int(draft_id), "status": SENT, "sent": delivered}
 
+    def edit(self, draft_id: int, reply: str) -> dict[str, Any]:
+        """Change a reply before it is sent.
+
+        The owner editing a draft is the normal case, not an exception: a model's wording is a
+        starting point. Only a *pending* draft can be edited, so an edit can never rewrite the
+        record of something already sent.
+        """
+        text = str(reply or "").strip()
+        if not text:
+            raise WorkflowError("a reply cannot be empty; discard the draft instead")
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE drafts SET reply = ? WHERE id = ? AND status = ?",
+                (text, int(draft_id), PENDING),
+            )
+            if not cursor.rowcount:
+                raise WorkflowError(f"draft {draft_id} is not waiting for approval")
+        return {"draft_id": int(draft_id), "reply": text, "status": PENDING}
+
     def reject(self, draft_id: int, reason: str = "") -> dict[str, Any]:
         with self._lock, self._connect() as conn:
             cursor = conn.execute(

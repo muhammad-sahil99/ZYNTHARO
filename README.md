@@ -178,6 +178,11 @@ that sends — mail, a message, a post — still waits for you.
   customer's inbox instead of starting a new conversation; message ids are namespaced by folder, so
   the same IMAP number in two folders cannot produce a double answer; and a message that could not
   be read is reported in the result rather than dropped.
+
+  In the app the same job has a **Replies** panel: press *check + draft*, and each message arrives
+  as a draft with the question shown beside the proposed answer. You edit, you send, or you discard;
+  editing never sends, sending twice is refused, and a draft can only leave through the source it
+  came from.
 - **Recurring report** writes a Word summary and an Excel breakdown from the ledger and reads both
   back to prove the totals.
 

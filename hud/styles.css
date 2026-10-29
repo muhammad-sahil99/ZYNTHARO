@@ -339,6 +339,15 @@ input[type="text"], input:not([type]) {
   padding: 6px 9px; color: var(--ink); font-family: var(--mono); font-size: 9.5px; outline: none;
 }
 input:focus { border-color: var(--cyan); box-shadow: 0 0 14px rgba(90, 209, 255, 0.22); }
+/* A draft reply is text the owner edits, so it gets a real writing surface: monospace, resizable
+   vertically, and the same focus treatment as an input so it is obviously the active field. */
+.reply-edit {
+  width: 100%; box-sizing: border-box; margin-top: 5px; resize: vertical;
+  background: rgba(3, 8, 16, 0.85); border: 1px solid var(--line);
+  padding: 6px 9px; color: var(--ink); font-family: var(--mono); font-size: 9.5px;
+  line-height: 1.5; outline: none;
+}
+.reply-edit:focus { border-color: var(--cyan); box-shadow: 0 0 14px rgba(90, 209, 255, 0.22); }
 
 /* ---------------- confirmations & notices ---------------- */
 .confirmations {

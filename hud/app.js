@@ -45,6 +45,9 @@
     connectors: null,
     connectorSpec: null,
     connectorResult: null,
+    // replies: drafts the fleet prepared and the owner has not sent yet
+    replies: null,
+    replyEdits: {},
     searchHits: [],
     scene: null,
     // 3D explanation window: the renderer is driven by the main animation loop, so closing the
@@ -694,6 +697,27 @@
           state.connectorResult = message.result || null;
           renderConnectorDetail();
         }
+        if (message.command === "reply.check") {
+          const result = message.result || {};
+          notice(result.summary || "the reply desk finished", "info", false);
+          if (result.drafted_with) notice("drafted by: " + result.drafted_with, "notice", false);
+        }
+        if (message.command === "reply.edit") {
+          const result = message.result || {};
+          delete state.replyEdits[result.draft_id];
+          notice("Draft " + result.draft_id + " saved (nothing sent yet).", "info", false);
+        }
+        if (message.command === "reply.approve") {
+          const result = message.result || {};
+          delete state.replyEdits[result.draft_id];
+          const to = (result.sent && (result.sent.to || result.sent.chat)) || "";
+          notice("Sent draft " + result.draft_id + (to ? " to " + to : "") + ".", "info", false);
+        }
+        if (message.command === "reply.reject") {
+          const result = message.result || {};
+          delete state.replyEdits[result.draft_id];
+          notice("Draft " + result.draft_id + " discarded.", "info", false);
+        }
         if (message.command === "index.search") {
           state.searchHits = (message.result && message.result.hits) || [];
           renderSearchHits();
@@ -753,6 +777,7 @@
     if (snapshot.comms) state.comms = snapshot.comms;
     if (snapshot.reserves) state.reserves = snapshot.reserves;
     if (snapshot.connectors) state.connectors = snapshot.connectors;
+    if (snapshot.replies) state.replies = snapshot.replies;
     if (snapshot.presence) state.presence = snapshot.presence;
     if (snapshot.schedule) state.schedule = snapshot.schedule;
     if (snapshot.lessons) state.lessons = snapshot.lessons;
@@ -779,6 +804,7 @@
     renderCapabilities();
     renderComms();
     renderReserves();
+    renderReplies();
     renderConnectors();
     renderPresence();
     renderSchedule();
@@ -1341,6 +1367,147 @@
       container.appendChild(node);
     });
     renderChrome();
+  }
+
+  /* ------------------------------------------------------- replies (the owner's outbox) */
+  /* A draft is a proposal, not a promise. The panel keeps the inbound message visible next to
+   * the proposed reply, because approving a reply without re-reading the question is how the
+   * wrong customer gets answered. Edits are held locally until "save" so a typo never becomes a
+   * half-sent message. */
+  function renderReplies() {
+    const container = $("replies");
+    if (!container) return;
+    const data = state.replies || {};
+    const summary = $("reply-summary");
+    const sourceSelect = $("reply-source");
+    container.innerHTML = "";
+    if (!data.attached) {
+      if (summary) summary.textContent = data.note || "the reply desk is not attached";
+      container.innerHTML = '<p class="hint">' + escapeHtml(data.note || "no reply desk in this build") + "</p>";
+      renderReplyHistory();
+      return;
+    }
+    if (summary) {
+      const counts = data.counts || {};
+      summary.textContent =
+        (counts.pending || 0) + " waiting · " + (counts.sent || 0) + " sent · " +
+        (counts.rejected || 0) + " discarded" + (counts.failed || 0 ? " · " + counts.failed + " failed to send" : "");
+    }
+    if (sourceSelect) {
+      const sources = (data.sources || []).filter((row) => row.name === "mail" || row.state === "ready");
+      const current = sourceSelect.value;
+      sourceSelect.innerHTML = "";
+      sources.forEach((row) => {
+        const option = document.createElement("option");
+        option.value = row.name;
+        option.textContent = row.name + (row.state === "ready" ? "" : " (" + (row.state || "not ready") + ")");
+        option.disabled = row.state !== "ready";
+        sourceSelect.appendChild(option);
+      });
+      if (current) sourceSelect.value = current;
+      if (!sources.length) {
+        const option = document.createElement("option");
+        option.textContent = "no source connected yet";
+        sourceSelect.appendChild(option);
+      }
+    }
+    const drafts = data.pending || [];
+    if (!drafts.length) {
+      container.innerHTML = '<p class="hint">Nothing waiting. Press “check + draft” to read the connected mailbox and prepare replies — you will still be the one who sends them.</p>';
+      renderReplyHistory();
+      return;
+    }
+    drafts.forEach((draft) => {
+      const node = document.createElement("div");
+      node.className = "plugin";
+      const edited = state.replyEdits[draft.id];
+      node.innerHTML =
+        '<div class="p-name" dir="auto">' + escapeHtml(draft.channel) + " → " + escapeHtml(draft.chat) +
+        ' <span class="chip">' + escapeHtml(draft.subject || "no subject") + "</span></div>" +
+        '<div class="p-meta" dir="auto">asked: ' + escapeHtml((draft.inbound_text || "").slice(0, 400)) + "</div>" +
+        '<textarea class="reply-edit" data-reply-id="' + escapeHtml(draft.id) + '" dir="auto" rows="4">' +
+        escapeHtml(edited !== undefined ? edited : (draft.reply || "")) + "</textarea>" +
+        '<div class="row">' +
+        '<button class="pill tiny" data-reply="' + escapeHtml(draft.id) + '" data-act="send">send</button>' +
+        '<button class="pill tiny" data-reply="' + escapeHtml(draft.id) + '" data-act="save">save edit</button>' +
+        '<button class="pill tiny" data-reply="' + escapeHtml(draft.id) + '" data-act="discard">discard</button>' +
+        "</div>";
+      container.appendChild(node);
+    });
+    renderReplyHistory();
+  }
+
+  function renderReplyHistory() {
+    const box = $("reply-history");
+    if (!box) return;
+    const data = state.replies || {};
+    const rows = data.history || [];
+    box.innerHTML = "";
+    if (!rows.length) return;
+    const head = document.createElement("div");
+    head.className = "trow";
+    head.innerHTML = '<span class="m">decided</span><span style="grid-column: span 4">what happened to each draft</span>';
+    box.appendChild(head);
+    rows.forEach((row) => {
+      const line = document.createElement("div");
+      line.className = "trow" + (row.status === "send_failed" ? " warning" : "");
+      const when = row.decided_at ? new Date(row.decided_at * 1000).toLocaleString() : "—";
+      line.innerHTML =
+        '<span class="m">' + escapeHtml(row.status) + '</span>' +
+        '<span style="grid-column: span 4" dir="auto">' + escapeHtml(when + " · " + (row.chat || "") +
+        (row.error ? " · " + row.error : "")) + "</span>";
+      box.appendChild(line);
+    });
+  }
+
+  function bindReplies() {
+    const container = $("replies");
+    if (container) {
+      container.addEventListener("input", (event) => {
+        const area = event.target.closest("textarea[data-reply-id]");
+        if (area) state.replyEdits[area.dataset.replyId] = area.value;
+      });
+      container.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-reply]");
+        if (!button) return;
+        const id = parseInt(button.dataset.reply, 10);
+        const area = container.querySelector('textarea[data-reply-id="' + button.dataset.reply + '"]');
+        const text = area ? area.value : "";
+        const act = button.dataset.act;
+        if (act === "save") {
+          send("reply.edit", { draft_id: id, reply: text });
+          return;
+        }
+        if (act === "discard") {
+          delete state.replyEdits[id];
+          send("reply.reject", { draft_id: id });
+          return;
+        }
+        if (act === "send") {
+          const draft = (state.replies && state.replies.pending || []).find((row) => row.id === id);
+          if (draft && text.trim() && text !== draft.reply) {
+            notice("Saving your edit first, then sending draft " + id + ".", "info", false);
+            send("reply.edit", { draft_id: id, reply: text });
+            window.setTimeout(() => { delete state.replyEdits[id]; send("reply.approve", { draft_id: id }); }, 400);
+            return;
+          }
+          delete state.replyEdits[id];
+          send("reply.approve", { draft_id: id });
+        }
+      });
+    }
+    const check = $("reply-check");
+    if (check) {
+      check.addEventListener("click", () => {
+        const select = $("reply-source");
+        const channel = select && select.value ? select.value : "mail";
+        const ok = send("reply.check", { channel: channel, limit: 5 });
+        if (!ok) { notice("No core connected — the reply desk needs a live fleet.", "warning", false); return; }
+        notice("Reading " + channel + " and drafting up to 5 replies...", "info", false);
+      });
+    }
+    const refresh = $("reply-refresh");
+    if (refresh) refresh.addEventListener("click", () => refreshState());
   }
 
   /* ------------------------------------------------- connected accounts (connectors) */
@@ -2466,6 +2633,7 @@
     bindChat();
     bindButtons();
     bindConnectors();
+    bindReplies();
     coreState("initialising", "link established");
     if (!core.ok) {
       $("core-sub").textContent = "WebGL unavailable — running in reduced mode";
