@@ -138,6 +138,25 @@ class Agent:
         record = self.memory.get_agent(self.id)
         return (record.model if record and record.model else self.identity.model) or ""
 
+    def preferred_models(self) -> list[str]:
+        """This agent's assigned model, then the roster chain for the job its role does.
+
+        Failover used to have exactly one preference, so a model with 20 requests/day could take
+        a 40-step tool loop down with it. The chain is ordered by *job* (see
+        :mod:`zyntharo.llm.roster`), so the fallback is the next model that can do this work —
+        not whichever model happens to sort first.
+        """
+        from ..llm.roster import chain_for_role
+
+        ordered = [self.model, *chain_for_role(getattr(self.template, "role", ""))]
+        seen: set[str] = set()
+        out: list[str] = []
+        for qualified in ordered:
+            if qualified and qualified not in seen:
+                seen.add(qualified)
+                out.append(qualified)
+        return out
+
     def budget(self) -> Any:
         return self.runtime.budget_for(self.id, self.identity.budget)
 
@@ -310,7 +329,7 @@ class Agent:
                 system=self.system_prompt(objective, team_note=self._team_note()),
             )
             try:
-                result = self.runtime.run(request, agent_id=self.id, prefer=[self.model], requirements=requirements)
+                result = self.runtime.run(request, agent_id=self.id, prefer=self.preferred_models(), requirements=requirements)
             except AllModelsUnavailable as exc:
                 report = AgentReport(
                     task_id, self.name, "blocked", "no model available to continue",
@@ -612,7 +631,7 @@ class Agent:
             system=self.system_prompt(team_note=self._team_note()),
         )
         try:
-            result = self.runtime.run(request, agent_id=self.id, prefer=[self.model], requirements=Requirements(tools=False))
+            result = self.runtime.run(request, agent_id=self.id, prefer=self.preferred_models(), requirements=Requirements(tools=False))
             answer = result.response.text.strip()[:1200] or "(no answer)"
         except AllModelsUnavailable as exc:
             answer = f"(unavailable: all models exhausted — {exc})"

@@ -8,6 +8,7 @@ quotas → runtime → actions → plugins → orchestrator → HUD/voice) and t
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import subprocess
@@ -22,6 +23,7 @@ from .actions import build_registry, driver_report, orchestration
 from .agents.orchestrator import Orchestrator, WorkItem
 from .config import AppConfig, Secrets, default_config, load_config
 from .events import LOG, EventBus
+from .llm import roster as model_roster
 from .llm.providers import ProviderRegistry
 from .llm.quotas import QuotaManager
 from .llm.runtime import ModelRuntime
@@ -632,6 +634,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     for row in providers.inventory():
         state = "ready" if row["ready"] else "no key"
         print(f"  {row['qualified']:<40} {state:<8} rpm={row['rpm']} rpd={row['rpd']} tpm={row['tpm']} tags={row['tags']}")
+    stats = model_roster.summary()
+    print(
+        f"\n  roster: {stats['models']} models across {stats['purposes']} jobs "
+        f"({stats['live']} live, {stats['tts']} speech, {stats['embedding']} embedding)"
+    )
+    if not stats["live_transport_implemented"]:
+        print(f"  live voice: blocked — {stats['live_transport_detail']}")
+    if stats["unconfirmed_ids"]:
+        print(
+            "  unconfirmed model ids (owner's list gave the name, not the id): "
+            + ", ".join(stats["unconfirmed_ids"])
+            + " — confirm with `zyntharo models --check`"
+        )
     print("\nDrivers:")
     for row in driver_report():
         mark = "ok" if row["available"] else "--"
@@ -917,6 +932,131 @@ def _format_workflow(payload: dict[str, Any]) -> str:
     for problem in payload.get("problems", []):
         lines.append(f"  problem: {problem}")
     return "\n".join(lines)
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    """The roster: every model, the job it does, and the order the Steward falls back through."""
+    config = load_config(args.config)
+    secrets = Secrets(config.home_path)
+    provider = config.provider("gemini")
+    stats = model_roster.summary()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "summary": stats,
+                    "models": [entry.to_json() for entry in model_roster.GEMINI],
+                    "purposes": model_roster.purpose_report(),
+                },
+                indent=2,
+            )
+        )
+        return 0
+    key_present = bool(provider and secrets.get(provider.api_key_env))
+    print(f"{stats['models']} models · {stats['providers']} providers · {stats['purposes']} jobs")
+    ranks = "  ".join(f"{label} {count}" for label, count in stats["by_rank"].items())
+    print(f"ranks by size class: {ranks}")
+    print("\nProviders (storing a key is what activates one):")
+    for row in model_roster.providers_report():
+        if not row["enabled"]:
+            state = f"disabled — needs {row['needs_extra'] or 'configuration'}"
+        else:
+            state = "key stored" if secrets.get(row["key_env"]) else "no key"
+        extra = f" + {row['needs_extra']}" if row["needs_extra"] and row["enabled"] else ""
+        key = row["key_env"] or "no key needed"
+        print(f"  {row['name']:<12} {state:<34} {row['models']:>2} models  {key}{extra}")
+        print(f"    {row['note']}")
+    print("\nJobs — first model is what runs; the rest is the fallback order:")
+    for row in model_roster.purpose_report():
+        purpose = model_roster.PURPOSES[row["purpose"]]
+        suffix = "" if row["implemented"] else "   [transport not implemented]"
+        band = model_roster.PURPOSES[row["purpose"]].rank_band
+        print(f"  {row['purpose']:<12} rank {band[0]}-{band[1]}  {row['job']}{suffix}")
+        print("    " + " -> ".join(row["chain"]))
+        print(f"    why: {row['why']}")
+        if not row["implemented"]:
+            print(f"    blocked now: {purpose.transport.detail}")
+    print("\nModels:")
+    for entry in [item for provider_row in model_roster.providers() for item in provider_row.models]:
+        caps = f"rpm={entry.rpm or 'no cap'} tpm={entry.tpm or 'no cap'} rpd={entry.rpd or 'no cap'}"
+        flag = "" if entry.id_confirmed else "   (id unconfirmed — `zyntharo models --check`)"
+        print(f"  {entry.qualified:<56} r{entry.rank} {caps}{flag}")
+    if stats["cap_conflicts"]:
+        print("\nCaps that differ between sources (your own list wins for your account):")
+        for qualified, note in stats["cap_conflicts"].items():
+            print(f"  {qualified}: {note}")
+    print("\nManager (the Steward's own chain — it must not be the single point of failure):")
+    manager_registry = ProviderRegistry(config.providers, secrets)
+    plan = ModelRuntime(config, manager_registry, QuotaManager(config)).manager_plan()
+    for row in plan["limits"]:
+        if not row["ready"]:
+            state = "no key"
+        elif row["headroom"] is None:
+            state = "unmetered (the offline stub)"
+        else:
+            state = f"headroom {row['headroom']:.0%}" + (f", cooling {row['cooldown_s']}s" if row["cooldown_s"] else "")
+        marker = "->" if row["model"] == plan["first"] else "  "
+        print(f" {marker} {row['model']:<56} {state}")
+    print(f"  would run now: {plan['first']}")
+    if plan["last_resort_is_keyless"]:
+        print(f"  terminal rung: {plan['terminal']} — keyless and reasonless, but the fleet keeps running")
+    if args.check:
+        print("\nChecking ids against the account...")
+        if not key_present:
+            print("  no key stored, so there is nothing to ask. Run `zyntharo key gemini`. Nothing was changed.")
+            return 2
+        result = model_roster.probe(provider.base_url, secrets.get(provider.api_key_env) or "")
+        print(f"  {result['detail']}")
+        if result["missing"]:
+            print("  this account does not serve: " + ", ".join(result["missing"]))
+        if result["unlisted"]:
+            print("  served but not in this roster: " + ", ".join(result["unlisted"]))
+        return 0 if result["ok"] and not result["missing"] else 1
+    return 0
+
+
+def cmd_key(args: argparse.Namespace) -> int:
+    """Store a provider key with hidden input, and prove it works before saying it does.
+
+    The key is never accepted on the command line (it would land in shell history and in ``ps``),
+    never echoed, and only written after the provider has actually answered with it.
+    """
+    config = load_config(args.config)
+    secrets = Secrets(config.home_path)
+    provider = config.provider(args.provider)
+    if provider is None:
+        print(f"no provider named {args.provider!r} in {config.config_path}")
+        return 2
+    env_name = provider.api_key_env or f"{args.provider.upper()}_API_KEY"
+    if args.from_env:
+        key = os.environ.get(env_name, "")
+        if not key:
+            print(f"{env_name} is not set; nothing was stored")
+            return 2
+    else:
+        try:
+            key = getpass.getpass(f"{args.provider} API key (hidden): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nno key entered; nothing was stored")
+            return 2
+    if not key:
+        print("no key entered; nothing was stored")
+        return 2
+    if provider.kind == "gemini":
+        result = model_roster.probe(provider.base_url, key)
+        if not result["ok"]:
+            print(f"not stored: the key did not work — {result['detail']}")
+            return 2
+        print(f"key works: {result['detail']}")
+        if result["missing"]:
+            print("warning: this account does not serve: " + ", ".join(result["missing"]))
+    else:
+        # Say it plainly: an unverifiable key is stored, not proven.
+        print("stored without a verification call — this build has no id probe for " + provider.kind)
+    secrets.set(env_name, key)
+    print(f"stored as {env_name} for {provider.name} ({len(key)} characters; the value was not printed)")
+    print("next: `zyntharo models` to see the roster, then `zyntharo run \"...\"`.")
+    return 0
 
 
 def cmd_agents(args: argparse.Namespace) -> int:
@@ -1554,6 +1694,18 @@ def build_parser() -> argparse.ArgumentParser:
     agents = sub.add_parser("agents", help="roster and quota report")
     agents.add_argument("--json", action="store_true")
     agents.set_defaults(func=cmd_agents)
+
+    models_cmd = sub.add_parser("models", help="the model roster, the job each model does, and the fallback order")
+    models_cmd.add_argument("--config")
+    models_cmd.add_argument("--json", action="store_true")
+    models_cmd.add_argument("--check", action="store_true", help="ask the account which model ids it really serves")
+    models_cmd.set_defaults(func=cmd_models)
+
+    key_cmd = sub.add_parser("key", help="store a provider API key (hidden input) and verify it")
+    key_cmd.add_argument("provider", nargs="?", default="gemini")
+    key_cmd.add_argument("--config")
+    key_cmd.add_argument("--from-env", action="store_true", help="read the key from the provider's env var, for CI")
+    key_cmd.set_defaults(func=cmd_key)
 
     hud = sub.add_parser("hud", help="start the interface")
     hud.add_argument("--port", type=int)

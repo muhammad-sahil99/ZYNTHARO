@@ -97,6 +97,54 @@ the same app-password mailbox that works for filing also answers customers. Hone
 
 ## Built partially, with the gap named
 
+* **The most human voice needs a socket this build does not have.** Five full-duplex Live models
+  are in the roster with their real caps (`gemini-2.5-flash-preview-native-audio-dialog` first —
+  true speech-to-speech). The Live API is a WebSocket protocol (`BidiGenerateContent`) and there
+  is no adapter for it, so `zyntharo models` prints the voice chain **and** the line
+  `[transport not implemented]`, and the voice path uses the best HTTPS tier that does work:
+  Gemini TTS when a key is stored, `edge-tts` otherwise. Nothing silently substitutes one for the
+  other, and no reply is ever spoken by a model that was not actually called.
+* **Some model ids in the roster are inferred.** The owner's list gave the Live API rows as
+  display names ("Gemini 3.8 Live Extended Thinking"), so their ids follow the vendor's naming
+  convention and are marked `id_confirmed: false` until `zyntharo models --check` sees them in the
+  account's own model list. The caps are the owner's numbers, not a scrape: nothing re-checks
+  them, so a vendor change to a limit is discovered as a 429 (the Steward's cooldowns handle
+  that) rather than predicted.
+* **The free-tier numbers for OpenRouter, Groq, Cerebras, Mistral and Cloudflare come from a
+  reference sheet, not from an account.** They are recorded as published, with two caveats stated
+  in `zyntharo/llm/roster.py`: where the sheet disagrees with the owner's own Gemini list (2.5
+  Flash: sheet 15 rpm / 1.5K rpd, owner 5 / 20) the owner's number wins and the difference is
+  listed under `CAP_CONFLICTS`; and Cloudflare publishes a daily *neuron* budget rather than a
+  request rate, so its rows carry no rpm/tpm/rpd at all rather than an invented one. Nothing
+  verifies a cap against a vendor — a changed limit arrives as a 429, which the Steward's
+  cooldowns already handle, and `zyntharo models` prints the number it is pacing against.
+* **A provider is usable only when its key is present, and Cloudflare also needs an account id.**
+  `CF_ACCOUNT_ID` missing means the provider is built disabled with that reason instead of a URL
+  that 404s. Keys are stored with `zyntharo key <provider>`; only Gemini's key is *verified*
+  against the account (its model list is the check), the others are stored and the CLI says the
+  key was not proven.
+* **Open-weight vision is not assumed.** The free tiers are listed for text work only; the vision
+  chain stays on Gemini, because claiming a screen-reading capability a free route may not serve
+  is exactly the sort of plausible default this project refuses.
+* **Three of the second sheet's providers publish a tier but no endpoint.** Token Harbor,
+  TeamoRouter and OVHcloud are declared with `base_url_env` and stay disabled, naming the variable
+  (`TOKEN_HARBOR_BASE_URL`, `TEAMOROUTER_BASE_URL`, `OVH_AI_BASE_URL`), until it is set. Writing a
+  guessed URL would have produced a provider that looks configured and 404s on every call. OVH's
+  anonymous tier genuinely needs no key, so its `api_key_env` is empty — a statement about the
+  tier, not a missing setting.
+* **No rate limit is recorded where the sheet published none.** DeepSeek's own platform lists a
+  5M-token bonus and concurrency ceilings instead of a request rate; Cloudflare lists neurons per
+  day. Those rows carry no rpm/rpd and say so, rather than a number that would make the Steward
+  pace against fiction.
+* **A model's rank is not a load on your machine.** All 60 models are remote APIs — a 340B
+  model costs your CPU exactly what an 8B model costs, because neither runs locally. Rank decides
+  what *spend* a job is worth and which model is suitable, not local resources. The local load is
+  the renderer, and that is the part that scales with cores: at ≤2 cores (or with reduced motion)
+  the particle budget halves to 12,000 dots and the instrument layer keeps its layout.
+* **The footprint numbers are measured on a 2-core VM, not on a Core 2 Duo.** The headless core
+  measured 74 MB resident across 7 threads and about 1% of one core while idle, which is the
+  class of machine in question, but a Pentium-era CPU differs in IPC and cache, and the browser
+  half of the HUD has not been measured on either — this VM renders through a software rasteriser.
 * **Office Tier A** (installed Word/Excel/Access/Outlook) needs Windows and an Office licence.
   Everything that can be done by reading and writing files (`.docx`, `.xlsx`, CSV) works with no
   Office installed; PowerPoint authoring is *refused* rather than faked, and says reading is the

@@ -23,7 +23,7 @@ the HUD instead of pretending.
 
 | need | used for | without it |
 |---|---|---|
-| Provider API keys (Gemini/OpenAI/Anthropic/…) | real model calls | the app runs against the offline `echo` provider only |
+| Provider API keys (Gemini/OpenAI/Anthropic/…) | real model calls | the app runs against the offline `echo` provider only. Store one with `zyntharo key <provider>` (hidden input, never printed). Optional extras, each activating only its own models: `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `MISTRAL_API_KEY`, `CLOUDFLARE_API_TOKEN` + `CF_ACCOUNT_ID`, `TOKEN_HARBOR_API_KEY` + `TOKEN_HARBOR_BASE_URL`, `SAMBANOVA_API_KEY`, `LLM7_API_KEY`, `TEAMOROUTER_API_KEY` + `TEAMOROUTER_BASE_URL`, `DEEPSEEK_API_KEY`, and `OVH_AI_BASE_URL` (that tier needs no key). Gemini's key is proven against the account before it is stored (`zyntharo models --check` confirms the ids); the others are stored without a probe and the CLI says so |
 | A Telegram bot token (`ZYNTHARO_TELEGRAM_TOKEN`) | the reply desk over Telegram | the channel reports `needs_setup` with that instruction; nothing is sent |
 | One live account per connector you intend to sell (a Gmail/Workspace mailbox with an app password, a Microsoft 365 tenant app registration, a Slack workspace, a GitHub org, one CRM) | proving each connector against the real service | connectors stay `configured`/`needs_setup`; their request shapes are tested, but no live acceptance has been run |
 | A Google OAuth client (Desktop app type) in a test project | the Google connector's consent, refresh and quota behaviour | the Google connector stays `needs_setup` with the exact Cloud Console steps |
@@ -47,8 +47,10 @@ the HUD instead of pretending.
 * **For source/developer runs only:** Playwright Chromium for browser control: `playwright install chromium`.
 * **OCR engine** (`rapidocr-onnxruntime`) for reading text off images; **`pypdf`** for PDF text.
 * **A virtual audio device** plus the WhatsApp sidecar for real-time voice calls.
-* **Provider quotas**: fill in each model's rpm/rpd/tpm so the Steward can manage failover
-  instead of discovering a limit by hitting it.
+* **Provider quotas** for all six providers ship filled in (`zyntharo/llm/roster.py`, from the
+  list you supplied and your reference sheet) so the Steward manages failover instead of
+  discovering a limit by hitting it. If a vendor changes a limit, edit that one entry — the number
+  is recorded once, there, and every chain and quota panel reads it from there.
 * **First run**: `zyntharo owner setup` (PIN, voice samples, recovery code), then
   `zyntharo doctor` to see which drivers exist on this machine.
 

@@ -162,7 +162,9 @@ def op_catalog_rollback(root: Path) -> tuple[bool, str]:
         version="gate-1",
         entries=[
             CatalogEntry("gemini", "gemini-2.5-flash", ACTIVE, rpm=7, rpd=200, tpm=250_000),
-            CatalogEntry("gemini", "gemini-2.5-pro", RETIRED),
+            # Retire a model the shipped roster really carries, so "the retired model survived"
+            # and "rollback restored it" are both meaningful checks and not vacuous passes.
+            CatalogEntry("gemini", "gemini-2.5-flash-lite", RETIRED),
         ],
     )
     verification = catalog.verify(hmac_key="", allow_unsigned=True)
@@ -174,13 +176,13 @@ def op_catalog_rollback(root: Path) -> tuple[bool, str]:
     if allowed:
         return False, "an update was applied while work was in flight"
     delta = gate.apply(config, in_flight=0, verification=verification)
-    if load_config(config.config_path).model("gemini:gemini-2.5-pro") is not None:
+    if load_config(config.config_path).model("gemini:gemini-2.5-flash-lite") is not None:
         return False, "the retired model survived the apply"
     applied = load_config(config.config_path).model("gemini:gemini-2.5-flash")
     if applied is None or applied.rpm != 7:
         return False, "the active catalogue entry was not applied"
     gate.rollback(config)
-    if load_config(config.config_path).model("gemini:gemini-2.5-pro") is None:
+    if load_config(config.config_path).model("gemini:gemini-2.5-flash-lite") is None:
         return False, "rollback did not restore the retired model"
     return True, f"blocked while busy ({reason[:38]}), applied -{len(delta.retired)} model(s), rolled back"
 

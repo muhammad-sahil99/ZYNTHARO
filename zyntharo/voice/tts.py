@@ -26,13 +26,20 @@ Everything is stdlib-only, so the core install still needs no third-party packag
 
 from __future__ import annotations
 
+import array
+import base64
 import json
 import os
+import re
 import shutil
 import subprocess
+import sys
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator, Protocol
+
+from ..llm.roster import GEMINI_BASE, chain as speech_chain
 
 FRAME_MS = 20
 DEFAULT_RATE = 16_000
@@ -115,6 +122,63 @@ def _ffmpeg_to_pcm(payload: Iterator[bytes], rate: int, ffmpeg: str) -> Iterator
     if pending:
         yield pending
     process.wait(timeout=20)
+
+
+def _pcm_resample(pcm: bytes, src_rate: int, dst_rate: int) -> bytes:
+    """Linear-interpolate 16-bit mono PCM between rates.
+
+    Gemini returns 24 kHz and the session wants 16 kHz. Playing 24 kHz samples as if they were
+    16 kHz does not "sound slightly fast" — it pitches the voice up a fifth, which is exactly the
+    kind of voice complaint this module exists to avoid. Resampling is the honest fix, and it is
+    30 lines of stdlib instead of a dependency.
+    """
+    if src_rate == dst_rate or len(pcm) < 4:
+        return pcm
+    samples = array.array("h")
+    samples.frombytes(pcm[: len(pcm) - (len(pcm) % 2)])
+    if sys.byteorder == "big":
+        samples.byteswap()
+    count = len(samples)
+    out_len = max(1, int(count * dst_rate / src_rate))
+    out = array.array("h", bytes(2 * out_len))
+    step = src_rate / dst_rate
+    for index in range(out_len):
+        position = index * step
+        left = int(position)
+        right = min(left + 1, count - 1)
+        fraction = position - left
+        out[index] = int(samples[left] * (1.0 - fraction) + samples[right] * fraction)
+    if sys.byteorder == "big":
+        out.byteswap()
+    return out.tobytes()
+
+
+def _decode_gemini_audio(payload: bytes) -> tuple[bytes, int]:
+    """Pull PCM and its rate out of a Gemini audio response, or raise the real reason."""
+    try:
+        data = json.loads(payload.decode("utf-8", "replace"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"malformed response: {exc}") from exc
+    candidates = data.get("candidates") or []
+    if not candidates:
+        blocked = (data.get("promptFeedback") or {}).get("blockReason") or "no candidates"
+        raise RuntimeError(f"no audio: {blocked}")
+    parts = ((candidates[0].get("content") or {}).get("parts")) or []
+    chunks: list[bytes] = []
+    rate = 24_000
+    for part in parts:
+        inline = part.get("inlineData") or part.get("inline_data") or {}
+        encoded = inline.get("data")
+        if not encoded:
+            continue
+        chunks.append(base64.b64decode(encoded))
+        mime = str(inline.get("mimeType") or inline.get("mime_type") or "")
+        match = re.search(r"rate=(\d+)", mime)
+        if match:
+            rate = int(match.group(1))
+    if not chunks:
+        raise RuntimeError("response contained no inline audio")
+    return b"".join(chunks), rate
 
 
 # --------------------------------------------------------------------------------------
@@ -217,6 +281,92 @@ class AzureStream(Engine):
         yield from _ffmpeg_to_pcm(_http_stream(url, headers, "POST", ssml.encode("utf-8")), rate, self.ffmpeg)
 
 
+class GeminiTTS(Engine):
+    """Gemini's own voices over plain HTTPS: the most human voice reachable without a socket.
+
+    The complaint that drove this module is that a batch neural voice sounds recited. The real
+    fix is speech-to-speech over the Live API, and this build does not have that socket (see
+    ``llm.roster.LIVE_SOCKET``, which is honest about it). What a single HTTPS call *can* do is
+    ask a current TTS model to render the line in its own voice with its own prosody, at 24 kHz,
+    which is audibly a person rather than a reader.
+
+    Each rung allows only 10 requests/day, so the chain is also the daily budget: a 429 moves to
+    the next model, and when every rung is spent the caller falls to the tier below rather than
+    going silent.
+    """
+
+    name = "gemini-tts"
+    tier = "neural_batch"
+    streaming = False
+
+    def __init__(self, config: Any):
+        self.key = os.environ.get("GEMINI_API_KEY", "") or str(getattr(config, "gemini_key", "") or "")
+        self.voice = str(getattr(config, "gemini_voice", "Kore") or "Kore")
+        self.base = str(getattr(config, "gemini_tts_url", "") or GEMINI_BASE)
+        try:
+            # Only Gemini serves these; a non-Gemini rung in the chain would be called against
+            # Gemini's URL with a foreign model id, which is a 404 dressed up as a voice bug.
+            self.models = [
+                qualified.split(":", 1)[1]
+                for qualified in speech_chain("speech")
+                if qualified.startswith("gemini:")
+            ]
+        except KeyError:  # pragma: no cover - the roster ships with the module
+            self.models = ["gemini-3.8-flash-tts"]
+
+    def ready(self) -> tuple[bool, str]:
+        if not self.key:
+            return False, "no GEMINI_API_KEY set (this is the most human voice that needs no socket)"
+        return True, f"{self.models[0]} · voice {self.voice} (batch: the reply is rendered whole)"
+
+    def stream(self, text: str, voice: str, rate: int) -> Iterator[bytes]:
+        failures: list[str] = []
+        for model in self.models:
+            try:
+                pcm, source_rate = self._render(model, text, voice)
+            except RuntimeError as exc:
+                failures.append(f"{model}: {exc}")
+                continue
+            data = _pcm_resample(pcm, source_rate, rate)
+            frame_bytes = int(rate * 2 * FRAME_MS / 1000)
+            pending = b""
+            for index in range(0, len(data) - frame_bytes + 1, frame_bytes):
+                yield data[index : index + frame_bytes]
+            pending = data[len(data) - (len(data) % frame_bytes) :] if len(data) % frame_bytes else b""
+            if pending:
+                yield pending
+            return
+        raise RuntimeError("every Gemini TTS model refused: " + "; ".join(failures))
+
+    def _render(self, model: str, text: str, voice: str) -> tuple[bytes, int]:
+        body = json.dumps(
+            {
+                "contents": [{"parts": [{"text": text}]}],
+                "generationConfig": {
+                    # Without AUDIO in the modalities the model answers with text and nothing is
+                    # spoken; this is the whole point of the call.
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": {
+                        "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice or self.voice}}
+                    },
+                },
+            }
+        ).encode("utf-8")
+        url = f"{self.base.rstrip('/')}/models/{model}:generateContent?key={self.key}"
+        request = urllib.request.Request(
+            url, data=body, headers={"Content-Type": "application/json"}, method="POST"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                payload = response.read()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:200]
+            raise RuntimeError(f"HTTP {exc.code} {detail}".strip()) from exc
+        except OSError as exc:
+            raise RuntimeError(f"network: {exc}") from exc
+        return _decode_gemini_audio(payload)
+
+
 class EdgeTTS(Engine):
     """Good neural voices, no key, but batch: this is the tier that sounds recited."""
 
@@ -317,7 +467,7 @@ class Espeak(Engine):
             yield payload[index : index + frame_bytes]
 
 
-ENGINES: list[type] = [OpenAIRealtime, ElevenLabsStream, AzureStream, EdgeTTS, PiperTTS, Espeak]
+ENGINES: list[type] = [OpenAIRealtime, ElevenLabsStream, AzureStream, GeminiTTS, EdgeTTS, PiperTTS, Espeak]
 
 #: Best tier first: a call should never use a lower tier when a higher one is configured.
 TIER_ORDER = ["realtime", "neural_stream", "neural_batch", "offline"]

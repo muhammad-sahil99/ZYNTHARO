@@ -527,6 +527,25 @@ class Secrets:
 # --------------------------------------------------------------------------------------
 
 
+def _roster_providers() -> list[ProviderConfig]:
+    """Every provider the roster knows. Imported lazily: the roster imports ``ModelSpec`` here.
+
+    A provider whose key is absent is still declared — it is simply not ``ready``, so its models
+    stay out of every chain until a key exists. That is what makes adding a key an activation
+    instead of a reconfiguration.
+    """
+    from .llm.roster import provider_configs
+
+    return provider_configs()
+
+
+def _default_model(role: str) -> str:
+    """First model of the role's own chain — see :mod:`zyntharo.llm.roster`."""
+    from .llm.roster import default_model
+
+    return default_model(role)
+
+
 def default_config() -> AppConfig:
     """A usable first-run config.
 
@@ -561,38 +580,19 @@ def default_config() -> AppConfig:
                     ModelSpec(model_id="your-model-id", rpm=60, rpd=1000, tpm=90_000, tags=["general"]),
                 ],
             ),
-            ProviderConfig(
-                name="gemini",
-                kind="gemini",
-                base_url="https://generativelanguage.googleapis.com/v1beta",
-                api_key_env="GEMINI_API_KEY",
-                priority=10,
-                models=[
-                    ModelSpec(
-                        model_id="gemini-2.5-flash",
-                        rpm=10,
-                        rpd=250,
-                        tpm=250_000,
-                        context_window=1_000_000,
-                        supports_audio_live=False,
-                        tags=["fast", "general"],
-                    ),
-                    ModelSpec(
-                        model_id="gemini-2.5-pro",
-                        rpm=5,
-                        rpd=100,
-                        tpm=250_000,
-                        tags=["reasoning"],
-                    ),
-                ],
-            ),
+            # Every provider with its published caps and job assignments lives in one module, so
+            # a limit is recorded once and the Steward's failover walks the chain *for that job*
+            # instead of whatever sorts first. Providers without a key are declared and unready.
+            *_roster_providers(),
         ],
+        # Each agent starts on the first model of its own job's chain, not on a single shared
+        # model: the Sovereign's job and the Archivist's job do not belong on the same quota.
         roster=[
-            AgentConfig(name="Sovereign", role="sovereign", model="gemini:gemini-2.5-flash", capabilities=["*"]),
+            AgentConfig(name="Sovereign", role="sovereign", model=_default_model("sovereign"), capabilities=["*"]),
             AgentConfig(
                 name="Steward",
                 role="steward",
-                model="gemini:gemini-2.5-flash",
+                model=_default_model("steward"),
                 capabilities=[
                     "process.list",
                     "model.assign",
@@ -605,7 +605,7 @@ def default_config() -> AppConfig:
             AgentConfig(
                 name="Artificer",
                 role="artificer",
-                model="gemini:gemini-2.5-flash",
+                model=_default_model("artificer"),
                 capabilities=[
                     "filesystem.read",
                     "filesystem.write",

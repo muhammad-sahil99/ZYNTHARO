@@ -171,6 +171,87 @@ class ModelRuntime:
         ordered.extend(s.qualified for s in rest)
         return ordered
 
+    def for_purpose(
+        self,
+        purpose: str,
+        requirements: Requirements | None = None,
+        prefer: Sequence[str] = (),
+    ) -> list[str]:
+        """Ordered candidates for a *job*, rather than for whichever model sorts first.
+
+        The chain lives in :mod:`zyntharo.llm.roster`. Using it here is what makes the Steward's
+        failover land on the next model that can actually do this work: a tool loop falls to a
+        60-rpm model, not to a 20-a-day thinker that would be spent by the third step.
+        """
+        from .roster import BY_QUALIFIED, PURPOSES, chain as purpose_chain
+
+        ordered = self.candidates(prefer=[*prefer, *purpose_chain(purpose)], requirements=requirements)
+        entry = PURPOSES.get(purpose)
+        low, high = entry.rank_band if entry is not None else (0, 4)
+
+        def priority(qualified: str) -> tuple[int, int]:
+            # 1. A model outside the job's size band is a fallback, never a first choice: an 8B
+            #    must not adjudicate a plan, and a 340B must not be spent on tagging.
+            # 2. Within the band, a model with no headroom left waits behind one that has some.
+            # 3. The offline stub is last always — it is a floor, not a contender.
+            if qualified.startswith("echo:"):
+                return (2, 0)
+            model = BY_QUALIFIED.get(qualified)
+            in_band = model is None or low <= model.rank <= high
+            quota = self.quotas.models.get(qualified)
+            headroom = QuotaManager.headroom(quota) if quota is not None else 1.0
+            return (0 if in_band else 1, 0 if headroom > 0.0 else 1)
+
+        return sorted(ordered, key=priority)
+
+    def manager_plan(self) -> dict[str, Any]:
+        """What the manager will use, what it falls to, and its own remaining headroom.
+
+        The Steward is the one agent whose exhaustion is systemic: if it cannot run, nobody
+        reassigns models or paces quotas, and the fleet stalls while every worker is still
+        healthy. This assembles its chain with the same quota-aware ordering as any other job and
+        reports the headroom that ordering used, so the decision is inspectable, not implied.
+        """
+        from .roster import chain as purpose_chain
+
+        # The *declared* ladder, not the currently-callable subset: a manager with no keys must
+        # still be able to show what it would fall through to once a key exists, and a keyless
+        # rung is a fact to report, not a reason to hide the row.
+        declared = purpose_chain("management")
+        now = self.quotas.clock()
+        limits: list[dict[str, Any]] = []
+        chosen = ""
+        for qualified in declared:
+            provider = qualified.split(":", 1)[0]
+            ready = self.registry.ready(provider)
+            quota = self.quotas.models.get(qualified)
+            headroom = round(QuotaManager.headroom(quota), 3) if quota is not None else None
+            cooling = round(max(0.0, quota.cooldown_until - now), 1) if quota is not None else 0.0
+            usable_now = ready and (headroom is None or headroom > 0.0)
+            if not chosen and usable_now and not qualified.startswith("echo:"):
+                chosen = qualified
+            limits.append(
+                {
+                    "model": qualified,
+                    "ready": ready,
+                    "usable_now": usable_now,
+                    "managed": quota is not None,
+                    "headroom": headroom,
+                    "cooldown_s": cooling,
+                }
+            )
+        # The stub is the terminal rung, not merely another candidate: it reasons about nothing,
+        # so it is reported last and is only "chosen" when every real model is unavailable.
+        terminal = declared[-1] if declared else ""
+        return {
+            "purpose": "management",
+            "first": chosen or terminal,
+            "chain": list(declared),
+            "limits": limits,
+            "terminal": terminal,
+            "last_resort_is_keyless": terminal.startswith("echo:"),
+        }
+
     def budget_for(self, agent_id: str, grant: Any = None) -> Budget:
         """Create (once) the resource budget for an agent.
 

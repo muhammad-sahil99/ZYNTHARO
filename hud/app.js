@@ -61,7 +61,10 @@
     seenMessages: new Set(),
   };
 
-  const core = new ParticleCore($("core"), { count: 6000 });
+  const core = new ParticleCore($("core"), { count: 36000 });
+  // Diagnostic handle: the visual check and the screenshot tooling need to read the real
+  // topology and particle budget rather than infer them from what the caption claims.
+  window.__core = core;
   const wires = new WireGraph($("wires"), { onSelect: selectAgent });
   // The instrument cage, waveform strips and gauge dials. Optional: without it the core and the
   // fleet wiring still work, so a browser without canvas 2D never loses the console entirely.
@@ -79,6 +82,58 @@
   function coreState(label, sub) {
     $("core-state").textContent = label;
     if (sub !== undefined) $("core-sub").textContent = sub;
+  }
+
+  /* What each topology means. The core is the interface, so a shape is not decoration: it says
+     what the system is doing. The caption names the topology in words underneath the dots, so
+     the picture is never the only witness to the state. */
+  const SHAPE_LABELS = {
+    sphere: "whole picture \u00b7 listening",
+    face: "presence \u00b7 she is here",
+    "face-m": "presence \u00b7 he is here",
+    saturn: "resting orbit \u00b7 steady",
+    galaxy: "fleet \u00b7 parallel work",
+    torus: "loop \u00b7 agents joining",
+    helix: "queue \u00b7 work stacking",
+    dna: "memory \u00b7 recall",
+    knot: "dependency \u00b7 negotiation",
+    cube: "structure \u00b7 files",
+    cone: "focus \u00b7 narrowing to one action",
+    atom: "models \u00b7 providers bound",
+    grid: "index \u00b7 local search",
+    wave: "voice \u00b7 speech",
+    burst: "spike \u00b7 burst of work",
+  };
+
+  function labelShape(name) {
+    const node = $("core-shape");
+    if (!node || !name) return;
+    node.textContent = name + " \u00b7 " + (SHAPE_LABELS[name] || "working topology");
+  }
+
+  /* Several real event families only write a caption and never touched the body, so a memory
+     recall or a search looked identical to sitting still. Each family now owns a topology, which
+     is how the dots show more of what the system is doing without inventing any state. */
+  const SHAPE_FAMILIES = [
+    ["memory.", "dna"],
+    ["index.", "grid"],
+    ["comms.", "knot"],
+    ["reply.", "cube"],
+    ["schedule.", "helix"],
+    ["mcp.", "atom"],
+    ["connector.", "cone"],
+    ["presence.", "cone"],
+    ["hardware.", "burst"],
+    ["quota.", "burst"],
+    ["governor.", "sphere"],
+    ["supervisor.", "torus"],
+  ];
+
+  function shapeForTopic(topic) {
+    for (let i = 0; i < SHAPE_FAMILIES.length; i++) {
+      if (topic.indexOf(SHAPE_FAMILIES[i][0]) === 0) return SHAPE_FAMILIES[i][1];
+    }
+    return null;
   }
 
   /* Hardware alerts (spec 16) arrive from the deterministic monitor, not from an agent. They
@@ -578,11 +633,24 @@
     }
   }
 
+  /* Which 3D body the cloud becomes while a given kind of work is happening. The mapping is
+     about meaning, not decoration: files become a cube (a box of documents), a browser becomes a
+     ringed planet (many tabs in orbit), messaging becomes a double helix (two people in a thread),
+     the fleet becomes an atom (a nucleus and its shells), outside tools become a galaxy, and vision
+     becomes a burst. An unmapped action falls back to the wave, which is the neutral "working". */
   function shapeForAction(name) {
     if (!name) return "sphere";
-    if (name.startsWith("fs_") || name.startsWith("office_")) return "grid";
-    if (name.startsWith("browser_")) return "torus";
-    if (name.startsWith("agent_") || name.startsWith("model_")) return "helix";
+    if (name.startsWith("mcp_")) return "galaxy";
+    if (name.startsWith("fs_") || name.startsWith("office_") || name.startsWith("doc") ||
+        name.startsWith("xlsx") || name.startsWith("csv") || name.startsWith("pptx")) return "cube";
+    if (name.startsWith("browser_")) return "saturn";
+    if (name.startsWith("whatsapp_") || name.startsWith("channel_") || name.startsWith("connector_")) return "dna";
+    if (name.startsWith("agent_") || name.startsWith("model_") || name.startsWith("fleet_") ||
+        name.startsWith("task_") || name.startsWith("speaker_")) return "atom";
+    if (name.startsWith("workflow_") || name.startsWith("reply_")) return "knot";
+    if (name.startsWith("term_") || name.startsWith("proc_") || name.startsWith("input_")) return "cone";
+    if (name.startsWith("vision_") || name.startsWith("camera_") || name.startsWith("presence_")) return "burst";
+    if (name.startsWith("hw_") || name.startsWith("windows_") || name.startsWith("local_")) return "torus";
     return "wave";
   }
 
@@ -677,6 +745,11 @@
         const payload = message.event || { payload: {} };
         const effect = TOPIC_EFFECTS[topic];
         if (effect) effect(payload);
+        // A family without its own effect still moves the body, so no action is invisible.
+        if (!effect && core.ok) {
+          const family = shapeForTopic(topic);
+          if (family) core.setShape(family);
+        }
         routeChromePulse(topic, payload);
         if (socket && topic === "action.confirm") { /* card rendered by effect chain below */ }
         if (topic === "action.confirm") renderConfirmation(payload);
@@ -923,29 +996,89 @@
     });
   }
 
+  /* Models & connectivity. The question this screen answers is not "what could be configured"
+     but "which model is answering right now, and how much of its envelope is left". A provider
+     is only marked ready when the inventory says its credentials resolve, and a model with no
+     quota row says "not metered yet" instead of drawing a reassuring empty bar. */
   function renderUpdates(partial) {
     if (partial) state.updates = { ...(state.updates || {}), ...partial };
     const container = $("updates");
     if (!container) return;
     const updates = state.updates || {};
-    const rows = [
-      ["launch mode", updates.mode || "byok", "who pays for model calls"],
-      ["catalog version", updates.catalog_version || "none loaded", "model knowledge without a release"],
-      ["staged", updates.staged ? updates.staged + " (" + (updates.method || "unverified") + ")" : "nothing staged", ""],
-      ["last apply", updates.applied || "—", "only ever between actions"],
-      ["drift check", updates.drift || "not run yet", "retired model IDs reported, never faked"],
-      ["blocked", updates.blocked || updates.billing || "", ""],
+    const models = ((state.snapshot || {}).models) || [];
+    const quotas = state.quotas || [];
+    const short = (value) => {
+      const n = Number(value);
+      if (!isFinite(n)) return String(value);
+      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "m";
+      if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "k";
+      return String(n);
+    };
+    const bar = (label, used, limit) => {
+      if (limit === null || limit === undefined) {
+        return '<div class="limit"><span class="lab">' + label + '</span>' +
+          '<div class="track"></div><span class="val">no cap</span></div>';
+      }
+      const pct = limit ? Math.min(100, Math.round(((used || 0) / limit) * 100)) : 0;
+      const band = pct >= 95 ? " bad" : pct >= 75 ? " warn" : "";
+      return '<div class="limit' + band + '"><span class="lab">' + label + '</span>' +
+        '<div class="track"><div class="fill" style="width:' + pct + '%"></div></div>' +
+        '<span class="val">' + short(used || 0) + "/" + short(limit) + '</span></div>';
+    };
+
+    const cards = models.map((model) => {
+      const quota = quotas.find((row) => row.model === model.qualified) || null;
+      const state_ = model.ready === false || model.configured === false
+        ? "unconfigured"
+        : (quota && /cooling|error|exhausted/i.test(String(quota.status || ""))) ? "error" : "ready";
+      const verify = model.reason || model.detail || model.note || "";
+      const limits = quota
+        ? bar("rpm", quota.rpm && quota.rpm.used, quota.rpm && quota.rpm.limit) +
+          bar("rpd", quota.rpd && quota.rpd.used, quota.rpd && quota.rpd.limit) +
+          bar("tpm", quota.tpm && quota.tpm.used, quota.tpm && quota.tpm.limit)
+        : '<div class="limit"><span class="lab">quota</span><div class="track"></div>' +
+          '<span class="val">not metered yet</span></div>';
+      const foot = quota && /cooling/i.test(String(quota.status || ""))
+        ? "cooling " + Math.round(quota.cooldown_s || 0) + "s · " + (quota.errors || 0) + " errors"
+        : (quota ? String(quota.status || "ok") + " · " + short(quota.total_requests || 0) + " calls" : "no traffic yet");
+      return '<div class="provider" data-state="' + state_ + '">' +
+        '<div class="provider-top"><span class="provider-name">' + escapeHtml(model.provider || "provider") + '</span>' +
+        '<span class="provider-kind">' + escapeHtml(model.kind || "") + '</span></div>' +
+        '<div class="provider-model">' + escapeHtml(model.model || model.qualified || "") + '</div>' +
+        '<div class="provider-tags">' +
+          (model.tags || []).map((tag) => '<span class="tag">' + escapeHtml(tag) + '</span>').join("") +
+          (model.audio_live ? '<span class="tag">live audio</span>' : "") +
+        '</div>' +
+        '<div class="limits">' + limits + '</div>' +
+        '<div class="provider-foot"><span class="provider-state">' + (state_ === "ready" ? "ready" : state_ === "error" ? "limited" : "unconfigured") + '</span>' +
+        '<span>' + escapeHtml(verify || foot) + '</span></div>' +
+      '</div>';
+    }).join("");
+
+    const facts = [
+      ["launch mode", updates.mode || "byok", "who pays for model calls", false],
+      ["catalogue", updates.catalog_version || "none loaded", ""],
+      ["staged", updates.staged ? updates.staged + " (" + (updates.method || "unverified") + ")" : "nothing staged", true],
+      ["last apply", updates.applied || "—", "only between actions"],
+      ["drift check", updates.drift || "not run yet", "retired IDs reported, never faked", true],
+      ["requests today", updates.requests_today === undefined ? "—" : short(updates.requests_today), ""],
+      ["spend today", updates.spend_today_usd === undefined ? "—" : "$" + Number(updates.spend_today_usd).toFixed(2), ""],
+      ["blocked", updates.blocked || updates.billing || "none", "", true],
     ];
-    container.innerHTML = "";
-    rows.forEach(([key, value, note]) => {
-      const row = document.createElement("div");
-      row.className = "trow" + (/blocked|none|not run/i.test(String(value)) && key !== "launch mode" ? " warning" : "");
-      row.innerHTML =
-        '<span class="m">' + escapeHtml(key) + "</span>" +
-        '<span style="grid-column: span 3" dir="auto">' + escapeHtml(String(value)) + "</span>" +
-        '<span style="color:var(--ink-dim)">' + escapeHtml(note || "") + "</span>";
-      container.appendChild(row);
-    });
+    const factHtml = facts.map(([k, v, note, warnWhenIdle]) => {
+      const idle = warnWhenIdle && /none|not run|nothing/i.test(String(v));
+      return '<div class="fact' + (idle ? " warn" : "") + '"><span class="k">' + escapeHtml(k) + '</span>' +
+        '<span class="v">' + escapeHtml(String(v)) + '</span>' +
+        (note ? '<span class="k">' + escapeHtml(note) + '</span>' : "") + '</div>';
+    }).join("");
+
+    container.innerHTML =
+      '<div class="u-section"><div class="u-head"><span>Providers &amp; models</span>' +
+      '<span>' + models.length + ' wired</span></div>' +
+      (cards ? '<div class="providers">' + cards + '</div>' : '<p class="hint">No provider is wired in yet. Add one with a base URL, a key and its limits; it is registered as a reserve until the Control Manager activates it.</p>') +
+      '</div>' +
+      '<div class="u-section"><div class="u-head"><span>Catalogue &amp; policy</span><span>signed</span></div>' +
+      '<div class="u-facts">' + factHtml + '</div></div>';
   }
 
   /* ---- fleet comms and the model bench ---- */
@@ -1959,6 +2092,16 @@
       container.appendChild(messageNode(entry.role, entry.text, entry.meta));
     });
     container.scrollTop = container.scrollHeight;
+    // The rail shows the tail; the console tab shows the session. Both read one buffer, so a
+    // message can never exist in one view and be missing from the other.
+    const full = $("transcript-full");
+    if (full) {
+      full.innerHTML = "";
+      state.transcript.slice(-200).forEach((entry) => {
+        full.appendChild(messageNode(entry.role, entry.text, entry.meta));
+      });
+      full.scrollTop = full.scrollHeight;
+    }
   }
 
   function messageNode(role, text, meta) {
@@ -1979,6 +2122,11 @@
     const container = $("transcript");
     container.appendChild(messageNode(role, text, meta));
     container.scrollTop = container.scrollHeight;
+    const full = $("transcript-full");
+    if (full) {
+      full.appendChild(messageNode(role, text, meta));
+      full.scrollTop = full.scrollHeight;
+    }
     if (role === "assistant" && state.speakReplies && !state.voiceMuted) speak(text);
   }
 
@@ -2332,6 +2480,15 @@
       utterance.rate = 1.03;
       utterance.pitch = 1.0;
       utterance.volume = 0.95;
+      /* The speech engine is the only honest source of mouth timing available here: it fires a
+         boundary per word, so the jaw opens on the words it is actually saying. */
+      utterance.onstart = () => { faceState.speakingUntil = performance.now() + 900; };
+      utterance.onboundary = () => {
+        faceState.speech = 1;
+        faceState.speakingUntil = performance.now() + 900;
+      };
+      utterance.onend = () => { faceState.speakingUntil = 0; faceState.speech = 0; };
+      utterance.onerror = () => { faceState.speakingUntil = 0; faceState.speech = 0; };
       window.speechSynthesis.speak(utterance);
     } catch (error) {
       console.warn("[zyntharo] speech failed", error);
@@ -2405,6 +2562,58 @@
     });
   }
 
+  /* The clean stage: the core is the screen, and every operational panel lives behind one
+     button. The console is a single drawer rather than a permanent wall of tabs, so opening it
+     never reflows the stage and closing it returns the plate to just the dots. */
+  function setConsoleOpen(open) {
+    const drawer = $("console");
+    if (!drawer) return;
+    drawer.classList.toggle("hidden", !open);
+    document.body.classList.toggle("console-open", open);
+    const toggle = $("drawer-toggle");
+    if (toggle) toggle.classList.toggle("live", open);
+    const check = $("m-panels");
+    if (check) check.checked = open;
+    // The instrument canvases may have been laid out at zero width while the drawer was closed;
+    // now that they have a size, re-measure so they draw into the panel instead of a stub pixel.
+    const active = drawer.querySelector(".tab-panel.active");
+    if (open && active && active.dataset.panel === "instruments" && widgets) widgets.resize();
+  }
+
+  function openPanel(name) {
+    const tab = document.querySelector('.tab[data-tab="' + name + '"]');
+    if (!tab) return;
+    document.querySelectorAll(".tab").forEach((other) => other.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("active"));
+    tab.classList.add("active");
+    const panel = document.querySelector('[data-panel="' + name + '"]');
+    if (panel) panel.classList.add("active");
+    const group = tab.closest(".tab-group");
+    const head = group && group.querySelector(".tab-group-head");
+    if (head) $("console-group").textContent = head.textContent.toLowerCase();
+    if (name === "instruments" && widgets) widgets.resize();
+    setConsoleOpen(true);
+  }
+
+  function bindFrame() {
+    const toggle = $("drawer-toggle");
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        setConsoleOpen($("console").classList.contains("hidden"));
+        core.pulseShear(0.08);
+      });
+    }
+    const close = $("console-close");
+    if (close) close.addEventListener("click", () => setConsoleOpen(false));
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") setConsoleOpen(false);
+      if ((event.metaKey || event.ctrlKey) && event.key === ".") {
+        event.preventDefault();
+        setConsoleOpen($("console").classList.contains("hidden"));
+      }
+    });
+  }
+
   function bindMenu() {
     $("menu-btn").addEventListener("click", () => $("menu").classList.toggle("hidden"));
     document.addEventListener("click", (event) => {
@@ -2415,7 +2624,7 @@
       if (event.target.checked) $("chat-input").focus();
     });
     $("m-chat-panel").addEventListener("change", (event) => {
-      document.querySelector('[data-panel="transcript"]').style.display = event.target.checked ? "block" : "none";
+      $("side-panels").classList.toggle("hidden", !event.target.checked);
     });
     // The two stacks are groups, not single panels: the fleet stack carries the diagnostics, the
     // roster and the telemetry matrix, so one switch has to move all of it or the frame looks broken.
@@ -2426,7 +2635,7 @@
       });
     });
     $("m-panels").addEventListener("change", (event) => {
-      $("side-panels").classList.toggle("hidden", !event.target.checked);
+      setConsoleOpen(event.target.checked);
       document.querySelectorAll('[data-stack="console"]').forEach((panel) => {
         panel.classList.toggle("hidden", !event.target.checked);
       });
@@ -2455,14 +2664,8 @@
         coreState(button.dataset.shape, "manual topology");
       });
     });
-    document.querySelectorAll(".tab").forEach((tab) => {
-      tab.addEventListener("click", () => {
-        document.querySelectorAll(".tab").forEach((other) => other.classList.remove("active"));
-        document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("active"));
-        tab.classList.add("active");
-        const panel = document.querySelector('[data-panel="' + tab.dataset.tab + '"]');
-        if (panel) panel.classList.add("active");
-      });
+    document.querySelectorAll("[data-tab]").forEach((tab) => {
+      tab.addEventListener("click", () => openPanel(tab.dataset.tab));
     });
   }
 
@@ -2615,6 +2818,7 @@
     // the situation drives every layer before anything is drawn, so the plate is never a frame
     // behind the event it is showing
     if (fx) applyEffects(now);
+    updateFace(now);
     core.frame(now);
     if (grid) grid.frame(now);
     if (widgets) widgets.frame(now);
@@ -2646,16 +2850,206 @@
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
+  /* ------------------------------------------------------------------ presence face
+
+     The cloud can stop being an instrument and become a face: a head sampled from a height field,
+     lit by that field's own gradient, holding the same dots that were a planet a moment ago. The
+     user chooses which face (her, him, or neither) and that choice is remembered; everything else
+     the face does is driven by things that actually happen - the situation the fleet is in, where
+     the pointer is, and the speech engine's own word boundaries while a reply is read aloud.
+
+     The jaw is deliberately not animated from a timer. speechSynthesis exposes no audio stream, so
+     a syllable rhythm would be invented; the browser does fire a real boundary event per word, and
+     the mouth moves on those. When the core speaks through its own audio device the browser tells
+     us nothing, so the mouth stays at rest rather than performing a fake conversation. */
+  const FACE_KEY = "zyntharo.face";
+  const faceState = {
+    mode: "off",            // off | her | him
+    speakingUntil: 0,
+    speech: 0,              // decaying envelope from real word boundaries
+    blinkAt: 0,
+    blinkUntil: 0,
+    gazeX: 0, gazeY: 0, gazeTX: 0, gazeTY: 0,
+    movedAt: 0,
+  };
+
+  /* Expression per situation. These are the resting faces of a colleague, not animations: mild,
+     and only moved by states the system is genuinely in. */
+  const FACE_MOODS = {
+    idle: { smile: 0.14, brow: 0.04 }, offline: { smile: 0.02, brow: -0.08 },
+    wake: { smile: 0.18, brow: 0.18 }, listening: { smile: 0.20, brow: 0.16 },
+    speaking: { smile: 0.30, brow: 0.10 }, thinking: { smile: 0.02, brow: -0.22 },
+    delegating: { smile: 0.08, brow: -0.06 }, acting: { smile: 0.04, brow: -0.12 },
+    browsing: { smile: 0.06, brow: -0.08 }, officing: { smile: 0.04, brow: -0.10 },
+    remembering: { smile: 0.10, brow: 0.02 }, extending: { smile: 0.22, brow: 0.06 },
+    verified: { smile: 0.46, brow: 0.16 }, blocked: { smile: -0.18, brow: -0.26 },
+    confirming: { smile: -0.10, brow: -0.20 }, pressure: { smile: -0.14, brow: -0.24 },
+    failover: { smile: 0.0, brow: -0.14 }, error: { smile: -0.40, brow: -0.40 },
+    disputed: { smile: -0.40, brow: -0.38 }, reconciling: { smile: -0.04, brow: -0.12 },
+    updating: { smile: 0.34, brow: 0.14 }, yielding: { smile: 0.10, brow: 0.0 },
+  };
+
+  function faceShape() { return faceState.mode === "him" ? "face-m" : "face"; }
+
+  function paintFace() {
+    document.querySelectorAll("[data-face]").forEach((button) => {
+      const on = button.dataset.face === faceState.mode;
+      button.classList.toggle("on", on);
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function setFaceMode(mode) {
+    faceState.mode = mode === "her" || mode === "him" ? mode : "off";
+    try { window.localStorage.setItem(FACE_KEY, faceState.mode); } catch (error) { /* storage may be blocked */ }
+    paintFace();
+    if (!core.ok) return;
+    if (faceState.mode === "off") {
+      core.setShape("saturn", true);
+      labelShape("saturn");
+      coreState("idle", "awaiting instruction");
+    } else {
+      core.setShape(faceShape(), true);
+      labelShape(faceShape());
+      coreState("present", faceState.mode === "him" ? "he is listening" : "she is listening");
+    }
+  }
+
+  function bindFace() {
+    let stored = null;
+    try { stored = window.localStorage.getItem(FACE_KEY); } catch (error) { stored = null; }
+    faceState.mode = stored === "her" || stored === "him" ? stored : "off";
+    document.querySelectorAll("[data-face]").forEach((button) => {
+      button.addEventListener("click", () => setFaceMode(button.dataset.face));
+    });
+    paintFace();
+
+    // F cycles off -> her -> him. A face is a preference, so it gets a key, not a command.
+    document.addEventListener("keydown", (event) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const tag = event.target && event.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (event.key === "f" || event.key === "F") {
+        const order = ["off", "her", "him"];
+        setFaceMode(order[(order.indexOf(faceState.mode) + 1) % order.length]);
+      }
+    });
+
+    // eye contact: the iris follows the pointer, the head turns a little after it, and after a few
+    // seconds of stillness the eyes come back to the viewer - which is what people do.
+    window.addEventListener("pointermove", (event) => {
+      const nx = (event.clientX / Math.max(1, window.innerWidth)) * 2 - 1;
+      const ny = 1 - (event.clientY / Math.max(1, window.innerHeight)) * 2;
+      faceState.gazeTX = Math.max(-1, Math.min(1, nx * 1.5));
+      faceState.gazeTY = Math.max(-1, Math.min(1, ny * 1.5));
+      faceState.movedAt = performance.now();
+    });
+    document.addEventListener("pointerleave", () => { faceState.gazeTX = 0; faceState.gazeTY = 0; });
+
+    if (faceState.mode !== "off") {
+      window.setTimeout(() => {
+        if (!core.ok) return;
+        core.setShape(faceShape(), true);
+        labelShape(faceShape());
+      }, 700);
+    }
+  }
+
+  /** Called once per drawn frame. Cheap when no face is on stage. */
+  function updateFace(now) {
+    if (!core.ok || !core.setExpression) return;
+    if (faceState.mode === "off" && core.faceMix < 0.01) return;
+    faceState.speech *= 0.86;
+    if (now - faceState.movedAt > 4200) { faceState.gazeTX *= 0.97; faceState.gazeTY *= 0.97; }
+    faceState.gazeX += (faceState.gazeTX - faceState.gazeX) * 0.14;
+    faceState.gazeY += (faceState.gazeTY - faceState.gazeY) * 0.14;
+
+    if (now > faceState.blinkAt) {
+      faceState.blinkUntil = now + 120;
+      // blinking while speaking is more frequent and less regular than blinking at rest
+      const speaking = now < faceState.speakingUntil;
+      faceState.blinkAt = now + (speaking ? 1400 + Math.random() * 2400 : 2600 + Math.random() * 4600);
+    }
+
+    const speaking = now < faceState.speakingUntil;
+    const mood = FACE_MOODS[lastSituation] || FACE_MOODS.idle;
+    core.setExpression({
+      jaw: speaking ? 0.24 + 0.46 * Math.min(1, faceState.speech) : 0,
+      smile: mood.smile + (speaking ? 0.06 : 0),
+      brow: mood.brow,
+      blink: now < faceState.blinkUntil ? 1 : 0,
+      gazeX: faceState.gazeX,
+      gazeY: faceState.gazeY,
+    });
+  }
+
   /* ------------------------------------------------------------------ boot */
   let booted = false;
   function boot() {
     if (booted) return;
     booted = true;
+    bindFrame();
     bindMenu();
     bindChat();
     bindButtons();
+    bindFace();
     bindConnectors();
     bindReplies();
+    // Every topology change, whether from an event effect, the director or the menu, goes through
+    // the one wrapped call, so the caption can never drift away from the shape on screen.
+    if (core.ok) {
+      /* Shape requests are coalesced and rate-limited. A busy fleet emits events many times a
+         second, and every request used to restart a 1.2s morph: the body never settled between
+         two topologies and read as noise instead of as a shape. A topology now holds for a dwell
+         window, and only the most recent request survives it. */
+      const rawSetShape = core.setShape.bind(core);
+      const dwellMs = 2600;
+      let pendingShape = null;
+      let lastLand = 0;
+      let timer = 0;
+
+      function land(name) {
+        rawSetShape(name, false);
+        labelShape(name);
+        lastLand = performance.now();
+      }
+
+      function flush() {
+        if (!pendingShape) return;
+        const next = pendingShape;
+        pendingShape = null;
+        if (core.morphing) {
+          pendingShape = next;
+          timer = window.setTimeout(flush, 500);
+          return;
+        }
+        if (next !== core.shape) land(next);
+      }
+
+      core.setShape = function (name, instant) {
+        // the face is the user's choice, so a fleet event must not morph it away underneath them
+        if (faceState.mode !== "off" && name !== "face" && name !== "face-m") return;
+        if (instant) {
+          window.clearTimeout(timer);
+          pendingShape = null;
+          rawSetShape(name, true);
+          labelShape(name);
+          lastLand = performance.now();
+          return;
+        }
+        if (name === core.shape && !core.morphing) return;
+        if (core.morphing) { pendingShape = name; return; }
+        const wait = dwellMs - (performance.now() - lastLand);
+        if (wait > 0) {
+          pendingShape = name;
+          window.clearTimeout(timer);
+          timer = window.setTimeout(flush, wait + 40);
+          return;
+        }
+        land(name);
+      };
+      labelShape(core.shape);
+    }
     coreState("initialising", "link established");
     if (!core.ok) {
       $("core-sub").textContent = "WebGL unavailable — running in reduced mode";
@@ -2676,7 +3070,9 @@
     connect();
     window.requestAnimationFrame(loop);
     window.setTimeout(() => core.setShape("torus"), 2600);
-    window.setTimeout(() => { core.setShape("sphere"); coreState("idle", "awaiting instruction"); }, 5200);
+    // The resting body is Saturn: a planet with rings, which is the shape the plate should hold
+    // while nothing is being asked of it.
+    window.setTimeout(() => { core.setShape("saturn"); coreState("idle", "awaiting instruction"); }, 5200);
   }
 
   document.addEventListener("DOMContentLoaded", boot);

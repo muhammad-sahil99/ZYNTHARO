@@ -21,7 +21,7 @@
 
   // Must match hud/particle-core.js: the cage is drawn around a known globe geometry, not
   // around a guess.
-  const CAM_Z = 2.68;
+  const CAM_Z = 2.02;
   const FOCAL = 1.34;
   const CORE_Y = 0.52;      // vertical centre of the core, as a fraction of height
   const GLOBE = FOCAL / CAM_Z;   // globe radius in NDC units

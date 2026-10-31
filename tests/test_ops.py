@@ -553,7 +553,9 @@ class CatalogTests(unittest.TestCase):
         gate.stage(self.catalog())
         gate.apply(config, in_flight=0)
         gate.rollback(config)
-        self.assertIsNotNone(load_config(config.config_path).model("gemini:gemini-2.5-pro"))
+        # Any model from the shipped roster proves the previous configuration came back; the
+        # retired id in the catalogue is the one rollback must resurrect.
+        self.assertIsNotNone(load_config(config.config_path).model("gemini:gemma-4-31b-it"))
 
     def test_rollback_works_from_a_later_process(self):
         from zyntharo.config import default_config, load_config
@@ -570,7 +572,7 @@ class CatalogTests(unittest.TestCase):
         delta = later.rollback(config)
         self.assertIsNotNone(delta, "a fresh gate found no snapshot to roll back to")
         restored = load_config(config.config_path)
-        self.assertIsNotNone(restored.model("gemini:gemini-2.5-pro"))
+        self.assertIsNotNone(restored.model("gemini:gemma-4-31b-it"))
         self.assertIsNone(later.rollback(config), "a consumed snapshot was reused")
 
     def test_drift_check_reports_retired_ids_and_unreachable_providers(self):
@@ -578,7 +580,9 @@ class CatalogTests(unittest.TestCase):
 
         config = default_config()
         report = check_provider_models(config, fetch=lambda base, key, kind="": ["gemini-2.5-flash"])
-        self.assertIn("gemini-2.5-pro", [m["model_id"] for m in report["missing"]])
+        missing = [m["model_id"] for m in report["missing"]]
+        self.assertIn("gemma-4-31b-it", missing)
+        self.assertNotIn("gemini-2.5-flash", missing)
 
         def boom(base, key, kind=""):
             raise OSError("connection refused")

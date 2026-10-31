@@ -270,6 +270,30 @@ core.frame(1040);
 core.frame(1060);
 check(glRecord.missing.length === 0, "shader metadata drift after morphing: " + glRecord.missing.join(", "));
 
+/* Every declared topology must be a real body: finite, inside the shell, and not degenerate.
+   A shape that produced one point, or points past the shell, would morph into a smear or clip the
+   frame, and neither shows up until someone looks at it. This is the check that stands in for
+   looking. */
+const SHAPE_NAMES = [
+  "sphere", "saturn", "galaxy", "torus", "helix", "dna", "knot",
+  "cube", "cone", "atom", "grid", "wave", "burst",
+  "face", "face-m",
+];
+SHAPE_NAMES.forEach((name) => {
+  const points = core._shape(name);
+  check(points && points.length === core.bodyCount * 3, name + " produced the wrong point count");
+  core.setShape(name, true);
+  check(core.shape === name, "setShape refused " + name + ", so the menu button would do nothing");
+  const rs = radii(points);
+  check(rs.every((value) => Number.isFinite(value)), name + " produced non-finite points");
+  const max = Math.max.apply(null, rs);
+  const min = Math.min.apply(null, rs);
+  check(max <= 1.12, name + " extends past its shell: max radius " + max.toFixed(3));
+  check(max > 0.55, name + " is too small to read as a body (max radius " + max.toFixed(3) + ")");
+  check(max - min > 0.1, name + " collapsed to a single radius, so the shape is gone");
+});
+note("topologies verified: " + SHAPE_NAMES.length);
+
 // stress the state machine: energy, shear, collapse and a shockwave all on top of a morph
 core.setShape("torus");
 core.setEnergy(1);
@@ -348,7 +372,7 @@ check(waveSpecs.length >= 4, "the console should show at least four signal strip
 check(gaugeSpecs.length >= 3, "the console should show at least three dials, saw " + gaugeSpecs.length);
 
 chrome.setState({
-  link: "live", model: "gemini:gemini-2.5-pro", agents: 8, agentsWorking: 3, actions: 96,
+  link: "live", model: "gemini:gemini-3.8-flash", agents: 8, agentsWorking: 3, actions: 96,
   memory: { episodes: 855, facts: 116, tasks: 67 }, quota: "pressure", jobs: 3,
   verdicts: { met: 2, bad: 1 }, working: true,
 });
@@ -414,7 +438,7 @@ check(widgetsApi && typeof widgetsApi.attach === "function", "widgets.js did not
 check(widgetSpecs.length >= 12, "the console should mount at least twelve instruments, saw " + widgetSpecs.length);
 
 widgetsApi.setState({
-  link: "live", model: "gemini:gemini-2.5-pro",
+  link: "live", model: "gemini:gemini-3.8-flash",
   agents: { total: 8, running: 3, blocked: 1, failed: 0, idle: 4 },
   teams: 1, actions: 96,
   memory: { episodes: 855, facts: 116, tasks: 67, audits: 2410 },
